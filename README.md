@@ -1,4 +1,4 @@
-# `IaC for RS Platform`
+# `RS Platform · Infrastructure`
 
 Infrastructure as code for RS Platform.
 
