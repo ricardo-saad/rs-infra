@@ -1,10 +1,9 @@
-# `rs-infra`
+# `IaC for RS Platform`
 
 Infrastructure as code for RS Platform.
 
-> **Status:** Step 1 — repository scaffold. This README captures the accepted
-> repository contract from `rs-platform`; the infrastructure described below
-> has not been implemented in this repository yet.
+> **Status:** Repository scaffold complete. The infrastructure described below
+> is planned and has not been implemented in this repository yet.
 
 Repository scope, accountability, review duties, and cross-repository
 boundaries are defined in the [ownership contract](OWNERSHIP.md). Security
@@ -116,10 +115,9 @@ Third-party actions will be pinned to full commit SHAs. An apply must consume
 the exact plan that was reviewed. Untrusted forks never receive an OIDC token,
 provider credentials, or Terraform-state access.
 
-## Bootstrap order
+## Implementation order
 
-Repository settings and branch protections precede the first content push.
-After that, implementation proceeds in this order:
+Implementation proceeds in this order:
 
 1. Create the versioned S3 backend and native state locking with a documented
    local bootstrap identity.
@@ -135,16 +133,3 @@ After that, implementation proceeds in this order:
 
 Production remains blocked until the platform's failure-injection,
 restoration, and coordinated cutover checks pass.
-
-## Step 1 exit criteria
-
-The initial repository scaffold is complete when:
-
-- the repository is public from creation;
-- `main` protection and repository settings are configured before pushing;
-- this ownership contract is present;
-- `LICENSE`, `SECURITY.md`, `.github/CODEOWNERS`, Renovate configuration, and
-  the static CI workflow skeleton are added; and
-- every required static check passes without cloud credentials.
-
-No cloud resources are created in Step 1.
