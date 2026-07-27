@@ -1,0 +1,50 @@
+# Local environment and editor state.
+.DS_Store
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.swp
+
+# Terraform working data. Dependency lock files remain committed.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.plan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Packer and image-build output.
+**/.packer.d/
+packer_cache/
+output-*/
+*.raw
+*.img
+*.iso
+
+# Language and test caches.
+__pycache__/
+*.py[cod]
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+coverage/
+dist/
+
+# Operator-only generated configuration and key material.
+kubeconfig
+kubeconfig.*
+talosconfig
+talosconfig.*
+*.key
+*.pem
+*.p12
+*.pfx

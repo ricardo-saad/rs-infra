@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch RS Gateway per-interface desired manifests
+After=rs-gateway-reconcile.service
+
+[Path]
+PathChanged=/var/lib/rs-gateway/desired
+Unit=rs-gateway-reconcile.service
+
+[Install]
+WantedBy=rs-gateway.target

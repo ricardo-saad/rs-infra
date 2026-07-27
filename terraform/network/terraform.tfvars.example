@@ -1,0 +1,8 @@
+# Documentation-only values. Replace them with reviewed, non-sensitive inputs.
+availability_zone   = "eu-west-2a"
+vpc_cidr            = "10.0.0.0/16"
+public_subnet_cidr  = "10.0.0.0/24"
+private_subnet_cidr = "10.0.1.0/24"
+game_subnet_cidr    = "10.0.2.0/24"
+owner               = "example-owner"
+cost_center         = "example-cost-center"

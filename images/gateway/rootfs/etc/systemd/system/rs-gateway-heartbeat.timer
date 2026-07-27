@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule RS Gateway heartbeat
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Unit=rs-gateway-heartbeat.service
+
+[Install]
+WantedBy=rs-gateway.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=RS Gateway transactional peer reconciliation
+Requires=rs-gateway-nftables.service
+After=rs-gateway-nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/rs-gateway/reconcile-all.sh
+UMask=0077
+
+[Install]
+WantedBy=rs-gateway.target

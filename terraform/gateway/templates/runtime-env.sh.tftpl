@@ -1,0 +1,53 @@
+#!/bin/sh
+set -eu
+
+umask 077
+runtime_directory=/etc/rs-gateway
+runtime_file="$runtime_directory/runtime.env"
+temporary_file="$runtime_directory/.runtime.env.$$"
+bootstrap_condition="$runtime_directory/bootstrap-enabled"
+
+cleanup() {
+  rm -f "$temporary_file"
+}
+trap cleanup EXIT HUP INT TERM
+
+decode() {
+  printf '%s' "$1" | base64 --decode
+}
+
+install -d -m 0755 "$runtime_directory"
+{
+  printf 'AWS_REGION=%s\n' "$(decode '${aws_region_b64}')"
+  printf 'WIREGUARD_SECRET_ID=%s\n' "$(decode '${wireguard_secret_id_b64}')"
+  printf 'ADGUARD_SECRET_ID=%s\n' "$(decode '${adguard_secret_id_b64}')"
+  printf 'PUBLIC_KEY_PARAMETER_PREFIX=%s\n' "$(decode '${public_key_parameter_prefix_b64}')"
+  printf 'CLOUDWATCH_NAMESPACE=%s\n' "$(decode '${metrics_namespace_b64}')"
+  printf 'WAN_INTERFACE=%s\n' "$(decode '${wan_interface_b64}')"
+  printf 'BUILD_VERSION=%s\n' "$(decode '${build_version_b64}')"
+} >"$temporary_file"
+chmod 0600 "$temporary_file"
+chown root:root "$temporary_file"
+mv -f "$temporary_file" "$runtime_file"
+trap - EXIT HUP INT TERM
+
+profile_mode="$(decode '${gateway_profile_mode_b64}')"
+case "$profile_mode" in
+  bootstrap)
+    systemctl stop rs-gateway.target || true
+    systemctl disable rs-gateway.target
+    install -m 0600 /dev/null "$bootstrap_condition"
+    systemctl start --no-block rs-gateway-bootstrap.service
+    ;;
+  runtime)
+    systemctl stop rs-gateway-bootstrap.service || true
+    rm -f "$bootstrap_condition"
+    systemctl enable rs-gateway.target
+    # The target orders itself after cloud-final; --no-block avoids waiting on
+    # the cloud-final service that is currently executing this script.
+    systemctl start --no-block rs-gateway.target
+    ;;
+  *)
+    exit 1
+    ;;
+esac

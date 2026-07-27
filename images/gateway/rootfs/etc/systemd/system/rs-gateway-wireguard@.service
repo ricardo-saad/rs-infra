@@ -1,0 +1,15 @@
+[Unit]
+Description=RS Gateway WireGuard interface %i
+Requires=rs-gateway-secret-loader.service
+After=rs-gateway-secret-loader.service network-online.target
+Before=rs-gateway-nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/rs-gateway/wireguard-up.sh %i
+ExecStop=/usr/lib/rs-gateway/wireguard-down.sh %i
+RemainAfterExit=yes
+UMask=0077
+
+[Install]
+WantedBy=rs-gateway.target

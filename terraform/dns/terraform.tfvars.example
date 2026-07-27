@@ -1,0 +1,8 @@
+# Documentation-only values. Supply the token through the apply environment.
+zone_id            = "replace-me"
+gateway_elastic_ip = "192.0.2.1"
+wireguard_record_names = {
+  wg-users    = "users-vpn.example.invalid"
+  wg-personal = "personal-vpn.example.invalid"
+  wg-nodes    = "nodes-vpn.example.invalid"
+}

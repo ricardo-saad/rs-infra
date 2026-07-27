@@ -2,8 +2,11 @@
 
 Infrastructure as code for RS Platform.
 
-> **Status:** Repository scaffold complete. The infrastructure described below
-> is planned and has not been implemented in this repository yet.
+> **Status:** Initial repository scaffold complete. The EC2 gateway Terraform
+> and immutable-image source are implemented but have not been built or
+> applied. All other components remain contract-only scaffolds. Cloud plan and
+> apply automation is intentionally deferred until the backend and immutable
+> GitHub identity contracts are resolved.
 
 Repository scope, accountability, review duties, and cross-repository
 boundaries are defined in the [ownership contract](OWNERSHIP.md). Security
@@ -41,7 +44,7 @@ Terraform creates secret containers, policies, KMS keys, and references only.
 It never creates a secret version, renders Talos machine configuration, or
 places secret material in state.
 
-## Planned layout
+## Repository layout
 
 ```text
 rs-infra/
@@ -68,9 +71,9 @@ rs-infra/
 └── README.md
 ```
 
-Each directory under `terraform/` is an independent stack with its own state.
-Plans and applies run per stack, and a pull request touching multiple stacks
-receives a separate plan for each one.
+Each directory under `terraform/` is an independent stack intended to have its
+own state. The state naming and bootstrap contracts are still open; cloud
+plans and applies will be added only after they are resolved.
 
 ## Identity model
 
@@ -90,19 +93,27 @@ receives a separate plan for each one.
 - Image publication uses a dedicated role limited to image and artifact
   publication.
 
-## Planned CI gates
+## CI gates
 
-| Check | Trigger |
+The current pull-request workflow is static and fork-safe:
+
+| Check | Trigger | Status |
+|---|---|---|
+| Repository scaffold and immutable action pins | Pull request | Implemented |
+| `terraform fmt -check` | Pull request | Implemented |
+| Terraform validation per stack, without backend | Pull request | Implemented |
+| `tflint` | Pull request | Implemented |
+| `trivy config` | Pull request | Implemented |
+| `terraform-docs` drift | Pull request | Implemented |
+| `gitleaks` | Pull request | Implemented |
+| `actionlint` | Pull request | Implemented |
+| Gateway image contract unit tests | Pull request | Implemented |
+
+The remaining gates are deferred, not silently omitted:
+
+| Check | Intended trigger |
 |---|---|
-| `terraform fmt -check` | Pull request |
-| Terraform validation per changed stack | Pull request |
-| `tflint` | Pull request |
-| `trivy config` | Pull request |
-| `terraform-docs` drift | Pull request |
-| `gitleaks` | Pull request |
-| `actionlint` | Pull request |
 | Cloud plan per changed stack | Trusted same-repository pull request |
-| Fork safety gate | Fork pull request |
 | Infracost diff | Pull request |
 | Apply the reviewed plan | Merge to `main`, through `apply` |
 | Image build and QEMU boot test | Changes under `images/` |
@@ -111,9 +122,10 @@ receives a separate plan for each one.
 | Talos-seed safety tests | Changes under `tools/talos-seed/` |
 | Signed image publication | Tag |
 
-Third-party actions will be pinned to full commit SHAs. An apply must consume
-the exact plan that was reviewed. Untrusted forks never receive an OIDC token,
-provider credentials, or Terraform-state access.
+Third-party actions are pinned to full commit SHAs. The static workflow grants
+only `contents: read`; it has no OIDC, provider, state, Talos, or Kubernetes
+access. A future apply must consume the exact reviewed plan. Untrusted forks
+never receive an OIDC token, provider credentials, or Terraform-state access.
 
 ## Implementation order
 

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "dependencyDashboard": true,
+  "labels": [
+    "dependencies"
+  ],
+  "minimumReleaseAge": "3 days",
+  "pinDigests": true,
+  "rangeStrategy": "pin",
+  "schedule": [
+    "before 6am on Monday"
+  ],
+  "timezone": "Asia/Beirut",
+  "packageRules": [
+    {
+      "description": "Group GitHub Actions updates",
+      "groupName": "GitHub Actions",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Group Terraform core, providers, and modules",
+      "groupName": "Terraform",
+      "matchManagers": [
+        "terraform",
+        "terraform-version"
+      ]
+    },
+    {
+      "description": "Group image and Packer dependencies",
+      "groupName": "machine images",
+      "matchManagers": [
+        "dockerfile",
+        "packer"
+      ]
+    }
+  ]
+}

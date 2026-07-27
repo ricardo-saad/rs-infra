@@ -1,0 +1,19 @@
+[Unit]
+Description=RS Gateway AdGuard Home
+Requires=rs-gateway-secret-loader.service rs-gateway-nftables.service
+After=rs-gateway-secret-loader.service rs-gateway-nftables.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/AdGuardHome --no-check-update --config /run/rs-gateway/adguard/AdGuardHome.yaml --work-dir /var/lib/rs-gateway/adguard
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/run/rs-gateway/adguard /var/lib/rs-gateway/adguard
+
+[Install]
+WantedBy=rs-gateway.target

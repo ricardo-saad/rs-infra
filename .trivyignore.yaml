@@ -1,0 +1,9 @@
+misconfigurations:
+  - id: AWS-0104
+    paths:
+      - terraform/gateway/network.tf
+    expired_at: 2027-01-27
+    statement: >-
+      Owner: @ricardo-saad. The gateway is the reviewed NAT appliance and
+      human VPN egress, so unrestricted outbound traffic is an intentional
+      part of its contract. Reassess this exception before expiry.

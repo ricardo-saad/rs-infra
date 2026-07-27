@@ -1,0 +1,14 @@
+[Unit]
+Description=Restore last applied RS Gateway peer generations
+Requires=rs-gateway-nftables.service
+After=rs-gateway-nftables.service
+Before=rs-gateway-reconcile.path
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/rs-gateway/restore-applied.sh
+UMask=0077
+RemainAfterExit=yes
+
+[Install]
+WantedBy=rs-gateway.target

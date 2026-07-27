@@ -1,0 +1,17 @@
+[Unit]
+Description=RS Gateway one-time secret bootstrap
+ConditionPathExists=/etc/rs-gateway/bootstrap-enabled
+Conflicts=rs-gateway.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/rs-gateway/runtime.env
+ExecStart=/usr/lib/rs-gateway/bootstrap.py
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+
+# Deliberately disabled in the image. The one-time bootstrap workflow creates
+# the condition file and starts this unit explicitly under its temporary role.

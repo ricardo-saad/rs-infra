@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "destination": "192.0.2.10/32",
+  "protocol": "tcp",
+  "port": 25565
+}

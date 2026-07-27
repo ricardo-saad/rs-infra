@@ -1,0 +1,16 @@
+[Unit]
+Description=RS Gateway network appliance
+ConditionPathExists=!/etc/rs-gateway/bootstrap-enabled
+Wants=network-online.target cloud-final.service rs-gateway-reconcile.path
+Wants=rs-gateway-heartbeat.timer
+After=network-online.target cloud-final.service
+Requires=rs-gateway-secret-loader.service
+Requires=rs-gateway-wireguard@wg-users.service
+Requires=rs-gateway-wireguard@wg-personal.service
+Requires=rs-gateway-wireguard@wg-nodes.service
+Requires=rs-gateway-nftables.service
+Requires=rs-gateway-adguard.service
+Requires=rs-gateway-restore.service
+
+[Install]
+WantedBy=multi-user.target
