@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(cat .terraform-version)" = "${TERRAFORM_VERSION}"
-          jq --exit-status empty renovate.json
+          jq empty renovate.json
 
           required_readmes=(
             argocd/bootstrap/README.md
@@ -72,6 +72,12 @@ jobs:
         with:
           fail_level: any
           reporter: local
+          # The local reporter defaults to filter_mode "added", which needs a
+          # diff to compare against. Push events have no base ref to diff, so
+          # reviewdog exits with "diff command is empty". nofilter reports every
+          # finding regardless of event type, and lints the whole tree rather
+          # than only changed lines.
+          filter_mode: nofilter
 
   secrets:
     name: gitleaks

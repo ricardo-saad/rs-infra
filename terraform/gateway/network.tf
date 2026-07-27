@@ -55,11 +55,11 @@ resource "aws_eip_association" "gateway" {
 resource "aws_route" "private_internet" {
   route_table_id         = var.private_route_table_id
   destination_cidr_block = "0.0.0.0/0"
-  instance_id            = aws_instance.gateway.id
+  network_interface_id   = aws_instance.gateway.primary_network_interface_id
 }
 
 resource "aws_route" "game_user_overlay_return" {
   route_table_id         = var.game_route_table_id
   destination_cidr_block = local.wireguard_interfaces["wg-users"].overlay_subnet
-  instance_id            = aws_instance.gateway.id
+  network_interface_id   = aws_instance.gateway.primary_network_interface_id
 }
