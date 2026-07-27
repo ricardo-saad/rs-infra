@@ -6,6 +6,10 @@ Infrastructure as code for RS Platform.
 > repository contract from `rs-platform`; the infrastructure described below
 > has not been implemented in this repository yet.
 
+Repository scope, accountability, review duties, and cross-repository
+boundaries are defined in the [ownership contract](OWNERSHIP.md). Security
+issues must follow the private reporting process in [SECURITY.md](SECURITY.md).
+
 ## Purpose
 
 This repository owns:

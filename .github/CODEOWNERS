@@ -1,0 +1,17 @@
+# Default owner for every file in the repository.
+* @ricardo-saad
+
+# Repository governance and security policy.
+/.github/            @ricardo-saad
+/.github/CODEOWNERS  @ricardo-saad
+/OWNERSHIP.md         @ricardo-saad
+/SECURITY.md          @ricardo-saad
+/README.md            @ricardo-saad
+/LICENSE              @ricardo-saad
+
+# Privileged infrastructure and automation boundaries.
+/terraform/           @ricardo-saad
+/images/              @ricardo-saad
+/provisioner/         @ricardo-saad
+/tools/               @ricardo-saad
+/argocd/              @ricardo-saad
