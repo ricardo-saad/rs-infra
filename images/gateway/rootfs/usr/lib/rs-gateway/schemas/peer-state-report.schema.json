@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.rs-platform.invalid/gateway/peer-state-report-v1.json",
+  "title": "RS Gateway applied peer state report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gateway_id",
+    "applied"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "gateway_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "applied": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "interface",
+          "generation",
+          "manifest_digest"
+        ],
+        "properties": {
+          "interface": {
+            "enum": [
+              "wg-users",
+              "wg-nodes"
+            ]
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "manifest_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    }
+  }
+}

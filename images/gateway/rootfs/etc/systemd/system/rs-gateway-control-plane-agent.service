@@ -1,0 +1,24 @@
+[Unit]
+Description=RS Gateway outbound peer control-plane agent
+ConditionPathExists=/etc/rs-gateway/control-plane.env
+Requires=rs-gateway-nftables.service rs-gateway-restore.service
+After=rs-gateway-nftables.service rs-gateway-restore.service network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/rs-gateway/control-plane.env
+ExecStart=/usr/lib/rs-gateway/control_plane_agent.py
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/run/rs-gateway
+ReadWritePaths=/var/lib/rs-gateway/desired
+ReadWritePaths=/var/lib/rs-gateway/applied
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=rs-gateway.target

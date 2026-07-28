@@ -1,4 +1,4 @@
-# Documentation-only values. Supply the token through the apply environment.
+# Documentation-only values. Supply credentials through CLOUDFLARE_API_TOKEN.
 zone_id            = "replace-me"
 gateway_elastic_ip = "192.0.2.1"
 wireguard_record_names = {

@@ -14,7 +14,7 @@ output "gateway_elastic_ip" {
 }
 
 output "gateway_security_group_id" {
-  description = "Gateway security group admitting only three public WireGuard UDP ports plus private routed traffic."
+  description = "Gateway security group admitting three public WireGuard UDP ports, operator-scoped TCP/22, and private routed traffic."
   value       = aws_security_group.gateway.id
 }
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import fcntl
+import hashlib
 import ipaddress
 import json
 import os
@@ -41,6 +42,20 @@ PEER_FIELDS = {
 }
 USER_PEER_FIELDS = PEER_FIELDS | {"permissions"}
 HEALTH_POLICIES = {"required", "on_demand"}
+
+
+def canonical_manifest(manifest: dict) -> bytes:
+    """Return the stable bytes used by delivery and acknowledgement digests."""
+    return json.dumps(
+        manifest,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+
+
+def manifest_digest(manifest: dict) -> str:
+    return hashlib.sha256(canonical_manifest(manifest)).hexdigest()
 
 
 def run(command: list[str], *, stdin: str | None = None, check: bool = True) -> str:
@@ -141,9 +156,23 @@ def current_generation(interface_name: str) -> int:
     return read_manifest(path, interface_name)["generation"]
 
 
-def require_generation(candidate: int, current: int, *, restore: bool = False) -> None:
-    if candidate < current or (candidate == current and not restore):
-        raise ContractError("generation is stale or repeated")
+def require_generation(
+    candidate: int,
+    current: int,
+    *,
+    candidate_digest: str | None = None,
+    current_digest: str | None = None,
+    restore: bool = False,
+) -> None:
+    if candidate < current:
+        raise ContractError("generation is stale")
+    if candidate == current and not restore:
+        if (
+            candidate_digest is None
+            or current_digest is None
+            or candidate_digest != current_digest
+        ):
+            raise ContractError("generation conflicts with the applied manifest")
 
 
 def game_target_for(manifest: dict) -> dict | None:
@@ -245,33 +274,76 @@ def apply_routes(interface_name: str, old: Iterable[str], new: Iterable[str]) ->
         run(["ip", "route", "replace", address, "dev", interface_name])
 
 
-def verify(manifest: dict) -> None:
+def expected_user_rules(manifest: dict, game_target: dict | None) -> set[str]:
+    prefix = "add rule inet rs_gateway users_authorize "
+    return {
+        line.removeprefix(prefix)
+        for line in user_policy(manifest, game_target).splitlines()
+        if line.startswith(prefix)
+    }
+
+
+def live_user_rules() -> set[str]:
+    output = run(
+        ["nft", "-a", "list", "chain", "inet", "rs_gateway", "users_authorize"]
+    )
+    return {
+        " ".join(line.split(" # handle", 1)[0].split())
+        for line in output.splitlines()
+        if " # handle " in line
+    }
+
+
+def verify(manifest: dict, game_target: dict | None = None) -> None:
     interface_name = manifest["interface"]
     actual_peers = set(run(["wg", "show", interface_name, "peers"]).split())
     expected_peers = {peer["public_key"] for peer in manifest["peers"]}
     if actual_peers != expected_peers:
         raise RuntimeError("live WireGuard peers did not match the candidate")
-    for peer in manifest["peers"]:
-        output = run(["ip", "route", "show", peer["address"]])
-        if f"dev {interface_name}" not in output:
-            raise RuntimeError("live peer route did not match the candidate")
+    try:
+        route_records = json.loads(
+            run(["ip", "-json", "route", "show", "dev", interface_name])
+        )
+    except (TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError("live peer routes were unreadable") from error
+    if not isinstance(route_records, list):
+        raise RuntimeError("live peer routes were unreadable")
+    actual_routes = {
+        record.get("dst")
+        for record in route_records
+        if isinstance(record, dict)
+        and isinstance(record.get("dst"), str)
+        and record["dst"].endswith("/32")
+    }
+    expected_routes = {peer["address"] for peer in manifest["peers"]}
+    if actual_routes != expected_routes:
+        raise RuntimeError("live peer routes did not match the candidate")
+    if (
+        interface_name == "wg-users"
+        and live_user_rules() != expected_user_rules(manifest, game_target)
+    ):
+        raise RuntimeError("live user authorization did not match the candidate")
 
 
-def apply_manifest(manifest: dict, *, restore: bool = False) -> None:
+def apply_manifest(manifest: dict, *, restore: bool = False) -> dict:
     interface_name = manifest["interface"]
     APPLIED_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock_path = RUNTIME_ROOT / "locks" / f"{interface_name}.lock"
     lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with lock_path.open("w", encoding="utf-8") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        require_generation(
-            manifest["generation"],
-            current_generation(interface_name),
-            restore=restore,
-        )
-
         previous_path = APPLIED_ROOT / f"{interface_name}.json"
         previous = read_manifest(previous_path, interface_name) if previous_path.exists() else None
+        candidate_digest = manifest_digest(manifest)
+        current = previous["generation"] if previous else 0
+        current_digest = manifest_digest(previous) if previous else None
+        require_generation(
+            manifest["generation"],
+            current,
+            candidate_digest=candidate_digest,
+            current_digest=current_digest,
+            restore=restore,
+        )
         previous_addresses = [peer["address"] for peer in previous["peers"]] if previous else []
         candidate_addresses = [peer["address"] for peer in manifest["peers"]]
         game_target = game_target_for(manifest) if interface_name == "wg-users" else None
@@ -295,7 +367,8 @@ def apply_manifest(manifest: dict, *, restore: bool = False) -> None:
             try:
                 run(["wg", "syncconf", interface_name, str(candidate_path)])
                 apply_routes(interface_name, previous_addresses, candidate_addresses)
-                verify(manifest)
+                verify(manifest, game_target)
+                atomic_persist(previous_path, manifest)
             except BaseException:
                 run(["wg", "syncconf", interface_name, str(snapshot_path)], check=False)
                 apply_routes(interface_name, candidate_addresses, previous_addresses)
@@ -311,9 +384,13 @@ def apply_manifest(manifest: dict, *, restore: bool = False) -> None:
                         check=False,
                     )
                 raise
-            atomic_persist(previous_path, manifest)
         finally:
             shutil.rmtree(transaction_dir)
+        return {
+            "interface": interface_name,
+            "generation": manifest["generation"],
+            "manifest_digest": candidate_digest,
+        }
 
 
 def reconcile_path(path: pathlib.Path, *, restore: bool = False) -> None:

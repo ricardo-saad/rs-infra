@@ -1,9 +1,3 @@
-variable "cloudflare_api_token" {
-  description = "Zone-scoped, expiring Cloudflare token supplied only by the apply environment."
-  type        = string
-  sensitive   = true
-}
-
 variable "zone_id" {
   description = "Cloudflare zone ID. DNS resources remain scaffold-only."
   type        = string

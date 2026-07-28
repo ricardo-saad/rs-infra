@@ -23,7 +23,7 @@ The backend block is deliberately partial and must be configured at init time.
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.56.0 |
 
 ## Modules
 

@@ -87,6 +87,16 @@ variable "gateway_build_version" {
   }
 }
 
+variable "gateway_ssh_key_pair_name" {
+  description = "Existing EC2 key-pair name installed for operator-scoped SSH access; the private key is never managed by Terraform."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._-]{1,255}$", var.gateway_ssh_key_pair_name))
+    error_message = "gateway_ssh_key_pair_name must be a non-empty EC2 key-pair name containing only letters, digits, dots, underscores, and hyphens."
+  }
+}
+
 variable "root_volume_size_gib" {
   description = "Disposable encrypted root volume size in GiB."
   type        = number
@@ -102,6 +112,23 @@ variable "wireguard_ingress_ipv4_cidrs" {
   description = "IPv4 source CIDRs allowed to reach the public WireGuard UDP ports."
   type        = set(string)
   default     = ["0.0.0.0/0"]
+}
+
+variable "ssh_ingress_ipv4_cidrs" {
+  description = "One to eight explicit operator IPv4 /32s allowed to reach gateway TCP/22; wider or world-open SSH is forbidden."
+  type        = set(string)
+
+  validation {
+    condition = (
+      length(var.ssh_ingress_ipv4_cidrs) > 0 &&
+      length(var.ssh_ingress_ipv4_cidrs) <= 8 &&
+      alltrue([
+        for cidr in var.ssh_ingress_ipv4_cidrs :
+        can(cidrnetmask(cidr)) && can(regex("/32$", cidr))
+      ])
+    )
+    error_message = "ssh_ingress_ipv4_cidrs must contain one to eight valid IPv4 operator /32s."
+  }
 }
 
 variable "ssm_public_key_prefix" {

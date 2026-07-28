@@ -15,6 +15,7 @@ set -eu
 : "${CURL_VERSION:?}"
 : "${CA_CERTIFICATES_VERSION:?}"
 : "${PYTHON3_VERSION:?}"
+: "${OPENSSH_SERVER_VERSION:?}"
 : "${BUILD_VERSION:?}"
 
 export DEBIAN_FRONTEND=noninteractive
@@ -28,7 +29,8 @@ apt-get install --no-install-recommends -y \
   "apache2-utils=$APACHE2_UTILS_VERSION" \
   "curl=$CURL_VERSION" \
   "ca-certificates=$CA_CERTIFICATES_VERSION" \
-  "python3=$PYTHON3_VERSION"
+  "python3=$PYTHON3_VERSION" \
+  "openssh-server=$OPENSSH_SERVER_VERSION"
 
 curl --fail --location --proto '=https' --tlsv1.2 \
   "$ADGUARDHOME_ARCHIVE_URL" \
@@ -67,6 +69,11 @@ printf '%s\n' "$BUILD_VERSION" >/etc/rs-gateway/image-build-version
 chmod 0755 /usr/lib/rs-gateway/*.py /usr/lib/rs-gateway/*.sh
 chmod 0644 /usr/lib/rs-gateway/schemas/*.json
 chmod 0600 /etc/rs-gateway/runtime.env
+chmod 0644 /etc/ssh/sshd_config.d/90-rs-gateway.conf
+
+install -d -m 0755 /run/sshd
+/usr/sbin/sshd -t
+systemctl enable ssh.service
 
 systemctl disable --now wg-quick@wg-users.service \
   wg-quick@wg-personal.service wg-quick@wg-nodes.service 2>/dev/null || true

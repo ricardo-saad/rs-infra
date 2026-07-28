@@ -1,6 +1,6 @@
 resource "aws_security_group" "gateway" {
   name        = local.name_prefix
-  description = "Public WireGuard UDP only; no inbound TCP or SSH"
+  description = "Public WireGuard UDP, operator-scoped SSH, and private routed traffic"
   vpc_id      = var.vpc_id
 
   tags = {
@@ -23,6 +23,17 @@ resource "aws_vpc_security_group_ingress_rule" "wireguard" {
   ip_protocol       = "udp"
   from_port         = local.wireguard_interfaces[each.value.interface_name].port
   to_port           = local.wireguard_interfaces[each.value.interface_name].port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "ssh" {
+  for_each = var.ssh_ingress_ipv4_cidrs
+
+  security_group_id = aws_security_group.gateway.id
+  description       = "Operator-scoped SSH"
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = 22
+  to_port           = 22
 }
 
 resource "aws_vpc_security_group_ingress_rule" "private_routed_traffic" {

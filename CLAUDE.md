@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `rs-infra` is Infrastructure as Code for RS Platform: Terraform for AWS and Cloudflare, Packer-built immutable machine images, a Talos/Kubernetes node provisioner, operator-only secret tools, and a one-time Argo CD bootstrap. It provisions infrastructure and deploys no application workloads.
 
-**Status:** early-stage. Only `terraform/gateway/` and `images/gateway/` contain real implementation. Every other `terraform/` stack is a scaffold (variables/outputs/provider wiring but no resources). `argocd/`, `provisioner/`, `tools/secret/`, `tools/talos-seed/`, and `images/home/` are README-only placeholders with no code yet. Cloud plan/apply CI is intentionally not implemented until the state backend and GitHub OIDC identity contracts are resolved — do not add plan/apply workflows without being asked.
+**Status:** early-stage. Only `terraform/gateway/` and `images/gateway/` contain real implementation. Every other `terraform/` stack is a scaffold (variables/outputs/provider wiring but no resources). `argocd/`, `provisioner/`, `tools/secret/`, `tools/talos-seed/`, and `images/home/` are README-only placeholders with no code yet. Per-stack cloud plan/apply CI is scaffolded but cannot run until the state backend, immutable GitHub OIDC identity contracts, GitHub configuration, and committed provider lock files are in place.
 
 ### Key Directories
 
@@ -152,7 +152,7 @@ tflint --chdir=terraform/<stack> --format=compact    # v0.64.0, run per stack
 - **configuration-security (trivy)** — `trivy config` over the whole repo at `HIGH,CRITICAL`, using `.trivyignore.yaml` for accepted exceptions (currently one: `AWS-0104` on `terraform/gateway/network.tf`'s unrestricted egress, owned by `@ricardo-saad`, expiring `2027-01-27` — re-justify or fix before then, don't just re-extend blindly).
 - **gateway-image-contract** — `sh -n` syntax-checks every `images/gateway/**/*.sh`, then runs `python3 -m unittest discover -s images/gateway/tests -v`.
 
-All third-party Actions are pinned to commit SHAs already (Renovate, per `renovate.json`, is configured to keep them updated with `pinDigests: true`, 3-day minimum release age, Monday-morning batched PRs). Cloud plan/apply, Infracost, image build+boot test, provisioner tests, and secret/seed-tool safety tests are explicitly **not yet implemented** — see the "remaining gates" table in `README.md`. Don't add them speculatively; they're deferred pending the backend/identity contracts, not accidentally omitted.
+All third-party Actions are pinned to commit SHAs already (Renovate, per `renovate.json`, is configured to keep them updated with `pinDigests: true`, 3-day minimum release age, Monday-morning batched PRs). Cloud plan/apply workflows exist per deployable stack and fail closed until the prerequisites in `README.md` are configured. Infracost, image build+boot test, provisioner tests, and secret/seed-tool safety tests are explicitly **not yet implemented** — see the "remaining gates" table in `README.md`.
 
 ## Security & Secrets
 
@@ -161,7 +161,7 @@ All third-party Actions are pinned to commit SHAs already (Renovate, per `renova
 - The gateway's fail-closed loader (`secret_loader.py`) is the only thing that reads secret values, and only into `/run/rs-gateway` (tmpfs); it never logs a secret value and only emits value-free `SecretLoadFailure`/`PublicKeyPublicationFailure` CloudWatch metrics on failure.
 - If you find a committed secret: per `SECURITY.md`, treat it as compromised even if since deleted — report privately via GitHub Security Advisory, don't open a public issue/PR, and know that rewriting history alone is not sufficient remediation (the credential must be revoked/rotated).
 - Vulnerability reports go through `SECURITY.md`'s private GitHub Security Advisory process, not public issues; general hardening suggestions without concrete impact can be public issues.
-- Identity model (`README.md`): `rs-infra-plan` is read-only, assumable only from trusted branches (forks get static validation only); `rs-infra-apply` is mutating, assumable only from protected `main` through the `apply` environment; AWS trust binds immutable GitHub owner/repo IDs, audience, workflow purpose, and exact ref/environment; the Talos-seed role is MFA-backed, one-time-write, then disabled; the Cloudflare API token is the one recorded long-lived exception, zone-scoped and expiring, held only in the `apply` environment.
+- Identity model (`README.md`): `rs-infra-plan` has read-only provider/state access plus narrowly scoped private-plan writes and is assumable only from trusted branches (forks get static validation only); `rs-infra-apply` is mutating, assumable only from protected `main` through the `apply` environment; AWS trust binds immutable GitHub owner/repo IDs, audience, workflow purpose, and exact ref/environment; the Talos-seed role is MFA-backed, one-time-write, then disabled; Cloudflare has two zone-scoped, expiring token exceptions—read-only for trusted plans and write-only in the `apply` environment.
 - `.trivyignore.yaml` exceptions require an owner, a rationale, and an `expired_at` date — follow this format for any new exception, don't add a bare ID.
 
 ## Commit & PR Guidelines

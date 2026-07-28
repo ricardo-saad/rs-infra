@@ -4,6 +4,7 @@ import importlib.util
 import json
 import pathlib
 import sys
+import tempfile
 import unittest
 
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(LIB))
 
 import contract
 import bootstrap
+import control_plane_agent
 import gateway_reconciler
 import render_nftables
 import secret_loader
@@ -184,14 +186,40 @@ class ManifestValidationTests(unittest.TestCase):
         with self.assertRaises(contract.ContractError):
             gateway_reconciler.validate_manifest(value, "wg-nodes")
 
-    def test_rejects_stale_and_repeated_generations(self):
+    def test_generation_retries_require_the_exact_digest(self):
         gateway_reconciler.require_generation(2, 1)
-        for candidate in (1, 0):
-            with self.assertRaises(contract.ContractError):
-                gateway_reconciler.require_generation(candidate, 1)
+        gateway_reconciler.require_generation(
+            1,
+            1,
+            candidate_digest="a" * 64,
+            current_digest="a" * 64,
+        )
+        with self.assertRaises(contract.ContractError):
+            gateway_reconciler.require_generation(
+                1,
+                1,
+                candidate_digest="b" * 64,
+                current_digest="a" * 64,
+            )
+        with self.assertRaises(contract.ContractError):
+            gateway_reconciler.require_generation(0, 1)
         gateway_reconciler.require_generation(1, 1, restore=True)
         with self.assertRaises(contract.ContractError):
             gateway_reconciler.require_generation(0, 1, restore=True)
+
+    def test_manifest_digest_is_canonical_and_payload_sensitive(self):
+        value = manifest("wg-users")
+        reordered = {name: value[name] for name in reversed(list(value))}
+        self.assertEqual(
+            gateway_reconciler.manifest_digest(value),
+            gateway_reconciler.manifest_digest(reordered),
+        )
+        changed = copy.deepcopy(value)
+        changed["peers"][0]["public_key"] = key(2)
+        self.assertNotEqual(
+            gateway_reconciler.manifest_digest(value),
+            gateway_reconciler.manifest_digest(changed),
+        )
 
     def test_users_require_egress_and_only_known_additive_permission(self):
         value = manifest("wg-users")
@@ -220,11 +248,95 @@ class ManifestValidationTests(unittest.TestCase):
         self.assertIn("ip daddr 10.20.30.40 tcp dport 25565 accept", policy)
         self.assertNotIn("masquerade", policy)
 
+    def test_applied_cache_failure_rolls_back_live_candidate(self):
+        original_applied = gateway_reconciler.APPLIED_ROOT
+        original_runtime = gateway_reconciler.RUNTIME_ROOT
+        original_run = gateway_reconciler.run
+        original_persist = gateway_reconciler.atomic_persist
+        calls = []
+
+        def fake_run(command, *, stdin=None, check=True):
+            calls.append(command)
+            if command[:2] == ["wg", "showconf"]:
+                return "[Interface]\nListenPort = 51823\n"
+            if command[:2] == ["wg-quick", "strip"]:
+                return "[Interface]\nListenPort = 51823\n"
+            if command[:3] == ["wg", "show", "wg-nodes"]:
+                return key(1) + "\n"
+            if command[:3] == ["ip", "-json", "route"]:
+                return json.dumps([{"dst": "10.100.3.10/32", "dev": "wg-nodes"}])
+            return ""
+
+        def fail_persist(path, value):
+            raise OSError("test-only applied-cache failure")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            gateway_reconciler.APPLIED_ROOT = root / "applied"
+            gateway_reconciler.RUNTIME_ROOT = root / "run"
+            gateway_reconciler.run = fake_run
+            gateway_reconciler.atomic_persist = fail_persist
+            try:
+                with self.assertRaises(OSError):
+                    gateway_reconciler.apply_manifest(manifest())
+            finally:
+                gateway_reconciler.APPLIED_ROOT = original_applied
+                gateway_reconciler.RUNTIME_ROOT = original_runtime
+                gateway_reconciler.run = original_run
+                gateway_reconciler.atomic_persist = original_persist
+
+        sync_calls = [command for command in calls if command[:2] == ["wg", "syncconf"]]
+        self.assertEqual(len(sync_calls), 2)
+        self.assertTrue(any(command[:3] == ["ip", "route", "del"] for command in calls))
+
+    def test_live_verification_rejects_stale_routes_and_user_rules(self):
+        value = manifest("wg-users")
+        original_run = gateway_reconciler.run
+        stale_route = False
+        stale_rule = False
+
+        def fake_run(command, *, stdin=None, check=True):
+            if command[:2] == ["wg", "show"]:
+                return key(1) + "\n"
+            if command[:3] == ["ip", "-json", "route"]:
+                routes = [{"dst": "10.100.0.10/32"}]
+                if stale_route:
+                    routes.append({"dst": "10.100.0.11/32"})
+                return json.dumps(routes)
+            if command[:3] == ["nft", "-a", "list"]:
+                if stale_rule:
+                    return (
+                        "table inet rs_gateway {\n"
+                        " chain users_authorize {\n"
+                        "  ip saddr 10.100.0.11 ip daddr 10.20.30.40 "
+                        "tcp dport 25565 accept # handle 9\n"
+                        " }\n}\n"
+                    )
+                return "table inet rs_gateway {\n chain users_authorize {\n }\n}\n"
+            return ""
+
+        gateway_reconciler.run = fake_run
+        try:
+            gateway_reconciler.verify(value)
+            stale_route = True
+            with self.assertRaises(RuntimeError):
+                gateway_reconciler.verify(value)
+            stale_route = False
+            stale_rule = True
+            with self.assertRaises(RuntimeError):
+                gateway_reconciler.verify(value)
+        finally:
+            gateway_reconciler.run = original_run
+
 
 class FirewallTests(unittest.TestCase):
     def test_baseline_is_default_drop_with_only_current_public_ports(self):
-        policy = render_nftables.render("ens5")
+        policy = render_nftables.render("ens5", "198.51.100.1/32")
         self.assertGreaterEqual(policy.count("policy drop"), 2)
+        self.assertIn(
+            'iifname "ens5" ip saddr { 198.51.100.1/32 } tcp dport 22 accept',
+            policy,
+        )
         self.assertIn("51820, 51822, 51823", policy)
         self.assertNotIn("51821", policy)
         self.assertIn('iifname "wg-users" jump users_authorize', policy)
@@ -233,7 +345,7 @@ class FirewallTests(unittest.TestCase):
         self.assertIn('iifname "wg-users" oifname "ens5" masquerade', policy)
 
     def test_baseline_includes_private_role_and_talos_nat_contracts(self):
-        policy = render_nftables.render("ens5")
+        policy = render_nftables.render("ens5", "198.51.100.1/32")
         self.assertIn('iifname "wg-personal" ip daddr', policy)
         self.assertIn('iifname "wg-personal" oifname "ens5" drop', policy)
         self.assertIn('iifname "ens5" ip saddr', policy)
@@ -243,10 +355,168 @@ class FirewallTests(unittest.TestCase):
     def test_wan_interface_is_not_shell_or_nft_injectable(self):
         for value in ('ens5"; accept', "ens5\nflush ruleset", ""):
             with self.assertRaises(ValueError):
-                render_nftables.render(value)
+                render_nftables.render(value, "198.51.100.1/32")
+
+    def test_ssh_sources_are_exact_unique_ipv4_hosts(self):
+        policy = render_nftables.render(
+            "ens5",
+            "198.51.100.10/32,203.0.113.20/32",
+        )
+        self.assertIn(
+            "ip saddr { 198.51.100.10/32, 203.0.113.20/32 } tcp dport 22 accept",
+            policy,
+        )
+        for value in (
+            "",
+            "0.0.0.0/0",
+            "198.51.100.0/24",
+            "2001:db8::1/128",
+            "198.51.100.10/32,198.51.100.10/32",
+        ):
+            with self.assertRaises(ValueError):
+                render_nftables.render("ens5", value)
+
+
+class ControlPlaneAgentTests(unittest.TestCase):
+    def delivery(self, interface_name: str = "wg-users") -> dict:
+        value = manifest(interface_name)
+        return {
+            "schema_version": 1,
+            "gateway_id": "gateway-1",
+            "delivery_id": "delivery-1",
+            "manifest_digest": gateway_reconciler.manifest_digest(value),
+            "manifest": value,
+        }
+
+    def test_delivery_is_bound_to_gateway_interface_and_digest(self):
+        delivery = self.delivery()
+        _, validated = control_plane_agent.validate_delivery(delivery, "gateway-1")
+        self.assertEqual(validated, delivery["manifest"])
+        for field, replacement in (
+            ("gateway_id", "gateway-2"),
+            ("manifest_digest", "0" * 64),
+        ):
+            candidate = copy.deepcopy(delivery)
+            candidate[field] = replacement
+            with self.assertRaises(contract.ContractError):
+                control_plane_agent.validate_delivery(candidate, "gateway-1")
+        with self.assertRaises(contract.ContractError):
+            control_plane_agent.validate_delivery(
+                self.delivery("wg-personal"),
+                "gateway-1",
+            )
+
+    def test_acknowledgement_names_the_exact_applied_manifest(self):
+        delivery = self.delivery()
+        result = {
+            "interface": "wg-users",
+            "generation": 1,
+            "manifest_digest": delivery["manifest_digest"],
+        }
+        acknowledgement = control_plane_agent.acknowledgement(delivery, result)
+        self.assertEqual(acknowledgement["delivery_id"], "delivery-1")
+        self.assertEqual(acknowledgement["interface"], "wg-users")
+        self.assertEqual(acknowledgement["generation"], 1)
+        self.assertEqual(
+            acknowledgement["manifest_digest"],
+            delivery["manifest_digest"],
+        )
+        self.assertEqual(acknowledgement["outcome"], "applied")
+
+    def test_agent_requires_exact_https_mtls_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            private_key = pathlib.Path(directory) / "client.key"
+            private_key.write_text("test-only-placeholder\n", encoding="utf-8")
+            private_key.chmod(0o600)
+            environment = {
+                "CONTROL_PLANE_GATEWAY_ID": "gateway-1",
+                "CONTROL_PLANE_DESIRED_URL": "https://console.example/v1/desired",
+                "CONTROL_PLANE_ACK_URL": "https://console.example/v1/ack",
+                "CONTROL_PLANE_CA_FILE": "/run/control-plane/ca.pem",
+                "CONTROL_PLANE_CLIENT_CERT_FILE": "/run/control-plane/client.pem",
+                "CONTROL_PLANE_CLIENT_KEY_FILE": str(private_key),
+                "CONTROL_PLANE_POLL_SECONDS": "15",
+            }
+            self.assertEqual(
+                control_plane_agent.required_configuration(environment),
+                environment,
+            )
+            for name, value in (
+                ("CONTROL_PLANE_DESIRED_URL", "http://console.example/v1/desired"),
+                ("CONTROL_PLANE_ACK_URL", "https://other.example/v1/ack"),
+                ("CONTROL_PLANE_POLL_SECONDS", "1"),
+            ):
+                candidate = {**environment, name: value}
+                with self.assertRaises(contract.ContractError):
+                    control_plane_agent.required_configuration(candidate)
+            private_key.chmod(0o644)
+            with self.assertRaises(contract.ContractError):
+                control_plane_agent.required_configuration(environment)
+
+    def test_delivery_writes_and_applies_before_acknowledging(self):
+        events = []
+        original_persist = control_plane_agent.atomic_persist
+        original_apply = control_plane_agent.apply_manifest
+
+        def fake_persist(path, value):
+            events.append(("persist", path.name, value["generation"]))
+
+        def fake_apply(value):
+            events.append(("apply", value["interface"], value["generation"]))
+            return {
+                "interface": value["interface"],
+                "generation": value["generation"],
+                "manifest_digest": gateway_reconciler.manifest_digest(value),
+            }
+
+        control_plane_agent.atomic_persist = fake_persist
+        control_plane_agent.apply_manifest = fake_apply
+        try:
+            acknowledgement = control_plane_agent.deliver(
+                self.delivery(),
+                "gateway-1",
+            )
+        finally:
+            control_plane_agent.atomic_persist = original_persist
+            control_plane_agent.apply_manifest = original_apply
+        self.assertEqual(events[0][0], "persist")
+        self.assertEqual(events[1][0], "apply")
+        self.assertEqual(acknowledgement["outcome"], "applied")
 
 
 class ImageLayoutTests(unittest.TestCase):
+    def test_operator_ssh_is_key_only_and_non_forwarding(self):
+        sshd = (
+            ROOT
+            / "rootfs"
+            / "etc"
+            / "ssh"
+            / "sshd_config.d"
+            / "90-rs-gateway.conf"
+        ).read_text(encoding="utf-8")
+        for directive in (
+            "PermitRootLogin no",
+            "PasswordAuthentication no",
+            "KbdInteractiveAuthentication no",
+            "AuthenticationMethods publickey",
+            "AllowUsers ubuntu",
+            "AllowAgentForwarding no",
+            "AllowTcpForwarding no",
+            "PermitTunnel no",
+        ):
+            self.assertIn(directive, sshd)
+
+    def test_ipv6_forwarding_is_explicitly_disabled(self):
+        sysctl = (
+            ROOT
+            / "rootfs"
+            / "etc"
+            / "sysctl.d"
+            / "90-rs-gateway.conf"
+        ).read_text(encoding="utf-8")
+        self.assertIn("net.ipv6.conf.all.forwarding = 0", sysctl)
+        self.assertIn("net.ipv6.conf.default.forwarding = 0", sysctl)
+
     def test_bootstrap_unit_is_disabled_and_separate(self):
         bootstrap = (
             ROOT
@@ -296,6 +566,30 @@ class ImageLayoutTests(unittest.TestCase):
         self.assertIn("OnUnitActiveSec=1min", timer)
         for forbidden_label in ("peer_id", "public_key", "VersionId"):
             self.assertNotIn(forbidden_label, heartbeat)
+
+    def test_control_plane_agent_is_outbound_mtls_and_console_scoped(self):
+        agent = (
+            ROOT / "rootfs/usr/lib/rs-gateway/control_plane_agent.py"
+        ).read_text(encoding="utf-8")
+        unit = (
+            ROOT
+            / "rootfs/etc/systemd/system/rs-gateway-control-plane-agent.service"
+        ).read_text(encoding="utf-8")
+        self.assertIn("http.client.HTTPSConnection", agent)
+        self.assertIn("ssl.CERT_REQUIRED", agent)
+        self.assertIn("ssl.TLSVersion.TLSv1_3", agent)
+        self.assertIn('CONSOLE_INTERFACES = ("wg-users", "wg-nodes")', agent)
+        self.assertNotIn("ListenStream=", unit)
+        self.assertIn("ConditionPathExists=/etc/rs-gateway/control-plane.env", unit)
+
+    def test_openssh_server_is_an_explicit_image_pin(self):
+        packer = (ROOT / "gateway.pkr.hcl").read_text(encoding="utf-8")
+        build = (ROOT / "scripts/build.sh").read_text(encoding="utf-8")
+        install = (ROOT / "scripts/install.sh").read_text(encoding="utf-8")
+        self.assertIn('variable "openssh_server_version"', packer)
+        self.assertIn("RS_GATEWAY_OPENSSH_SERVER_VERSION", build)
+        self.assertIn('"openssh-server=$OPENSSH_SERVER_VERSION"', install)
+        self.assertIn("/usr/sbin/sshd -t", install)
 
     def test_json_schemas_parse_and_forbid_unknown_properties(self):
         schemas = ROOT / "rootfs/usr/lib/rs-gateway/schemas"

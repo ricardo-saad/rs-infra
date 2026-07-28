@@ -92,6 +92,10 @@ variable "python3_version" {
   type = string
 }
 
+variable "openssh_server_version" {
+  type = string
+}
+
 source "amazon-ebs" "gateway" {
   ami_name                    = "rs-gateway-${var.build_version}"
   ami_description             = "RS Platform immutable gateway ${var.build_version}"
@@ -143,6 +147,7 @@ build {
       "CURL_VERSION=${var.curl_version}",
       "CA_CERTIFICATES_VERSION=${var.ca_certificates_version}",
       "PYTHON3_VERSION=${var.python3_version}",
+      "OPENSSH_SERVER_VERSION=${var.openssh_server_version}",
       "BUILD_VERSION=${var.build_version}",
     ]
     execute_command = "chmod +x {{ .Path }}; sudo -E {{ .Vars }} {{ .Path }}"

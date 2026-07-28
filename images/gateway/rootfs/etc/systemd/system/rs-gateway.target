@@ -3,6 +3,7 @@ Description=RS Gateway network appliance
 ConditionPathExists=!/etc/rs-gateway/bootstrap-enabled
 Wants=network-online.target cloud-final.service rs-gateway-reconcile.path
 Wants=rs-gateway-heartbeat.timer
+Wants=rs-gateway-control-plane-agent.service
 After=network-online.target cloud-final.service
 Requires=rs-gateway-secret-loader.service
 Requires=rs-gateway-wireguard@wg-users.service

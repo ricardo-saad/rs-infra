@@ -41,6 +41,7 @@ export RS_GATEWAY_APACHE2_UTILS_VERSION='<apt-version>'
 export RS_GATEWAY_CURL_VERSION='<apt-version>'
 export RS_GATEWAY_CA_CERTIFICATES_VERSION='<apt-version>'
 export RS_GATEWAY_PYTHON3_VERSION='<apt-version>'
+export RS_GATEWAY_OPENSSH_SERVER_VERSION='<apt-version>'
 export RS_GATEWAY_BUILD_VERSION='<immutable-release-id>'
 ./scripts/build.sh
 ```
@@ -55,7 +56,8 @@ used while building.
 Terraform/user data writes `/etc/rs-gateway/runtime.env` using
 `runtime.env.example` as its allowlist. These are non-secret identifiers only:
 region, the two exact Secrets Manager identifiers, the public-key Parameter
-Store prefix, CloudWatch namespace, WAN device, and immutable build version.
+Store prefix, CloudWatch namespace, WAN device, operator SSH `/32` allowlist,
+and immutable build version.
 
 The normal boot target runs the fail-closed loader. It retrieves both
 `AWSCURRENT` values, validates them in memory, writes derived configuration
@@ -66,6 +68,11 @@ nftables, reconciliation, and AdGuard stopped.
 The baseline firewall gives `wg-users` public egress with private destinations
 denied, gives `wg-personal` private-range and enrolled-node access without
 internet egress, and masquerades public egress arriving from the Talos subnet.
+It admits TCP/22 on the WAN only from the same one-to-eight operator `/32`s
+enforced by the EC2 security group. The image installs an explicitly pinned
+OpenSSH server with key-only `ubuntu` access; root login, passwords,
+agent/X11/TCP forwarding, tunnels, and user environment injection are
+disabled.
 The gateway security group scopes that same-interface NAT path to the declared
 Talos CIDR. `wg-nodes` has no WAN or node-to-node path, and named relays remain
 default-denied until the separately versioned routing policy installs them.
@@ -111,12 +118,53 @@ invalid or duplicate keys, non-`/32`/out-of-subnet addresses, reserved
 addresses, unsupported health policies, and excessive peer counts. It holds
 an interface lock, snapshots live state into `/run`, applies and verifies the
 whole candidate, and restores WireGuard, routes, and user policy on failure.
-The generation is persisted only after verification.
+Verification reads back the exact WireGuard peer set, exact per-device `/32`
+routes, and exact `wg-users` authorization rules. The generation is persisted
+only after verification; persistence failure also rolls the live candidate
+back.
 
 On boot, a distinct restore unit reapplies only the root-owned last-applied
 cache before the desired-state watcher starts. That path may reapply the same
-generation to empty live interfaces; the normal transport path still rejects
-every stale or repeated generation.
+generation to empty live interfaces. A transport retry with the same
+generation and the same canonical SHA-256 manifest digest is also safe and
+reconverges the live state before acknowledging. The same generation with a
+different digest is a conflict, and an older generation is stale.
+
+`peer_id` is an opaque per-device identity, not a person, email address, or
+other client-identifying label. A person with two devices therefore has two
+peers, keys, and `/32`s.
+
+## Outbound control-plane transport
+
+The image includes an optional outbound-only mTLS agent. It is activated only
+when `/etc/rs-gateway/control-plane.env` exists; the checked-in
+`control-plane.env.example` documents its non-secret endpoint and file-path
+contract. TLS 1.3 requires a caller-supplied CA, client certificate, and mode
+`0600` client key. The agent rejects plaintext URLs, redirects, cross-origin
+desired/acknowledgement endpoints, oversized responses, and deliveries for
+`wg-personal`.
+
+The two endpoint paths are configuration rather than product assumptions.
+Each poll reports the exact applied generation and canonical manifest digest
+for the console-owned `wg-users` and `wg-nodes` interfaces. A returned
+delivery is accepted only when its gateway ID, interface authority, manifest,
+and digest all validate. The agent writes the desired file atomically,
+reconciles it, and posts an acknowledgement containing the exact delivery ID,
+interface, generation, and applied digest. If acknowledgement delivery fails,
+the control plane may repeat the same generation and digest safely.
+
+The administrator remains the only writer of `wg-personal`. The console
+datastore, IP allocation, enrollment capability, approval decision, client
+profile rendering, and client-side key generation do not belong in this
+image.
+
+The agent does not invent a durable client credential. Provisioning and
+renewal of its short-lived mTLS identity remain blocked on the platform issuer
+contract; no third gateway recovery secret is added here. Detached desired
+state signatures likewise require an agreed signing algorithm and pinned
+verification-key lifecycle. Until those contracts are implemented, mTLS is
+the delivery authentication boundary and this transport must not be promoted
+as satisfying the architecture's signed-generation gate.
 
 `games` is schema-valid only for `wg-users`, but is rejected at apply time
 until `/etc/rs-gateway/game-target.json` contains the separately reviewed

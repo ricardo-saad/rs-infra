@@ -5,8 +5,10 @@ tunnel configuration.
 
 The WireGuard A records consume the gateway stack's Elastic IP and remain
 DNS-only (`proxied = false`). Other zone and tunnel resources are scaffold-only.
-The zone-scoped, expiring
-Cloudflare token is supplied only by the protected apply environment.
+Cloudflare credentials use the provider's `CLOUDFLARE_API_TOKEN` environment
+variable so they are not embedded in a saved Terraform plan. Trusted
+same-repository plans receive an expiring, zone-scoped read token; the
+protected apply environment supplies the expiring, zone-scoped write token.
 
 The backend block is deliberately partial and must be configured at init time.
 
@@ -22,7 +24,7 @@ The backend block is deliberately partial and must be configured at init time.
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | ~> 5.0 |
+| <a name="provider_cloudflare"></a> [cloudflare](#provider\_cloudflare) | 5.22.0 |
 
 ## Modules
 
@@ -38,7 +40,6 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |
-| <a name="input_cloudflare_api_token"></a> [cloudflare\_api\_token](#input\_cloudflare\_api\_token) | Zone-scoped, expiring Cloudflare token supplied only by the apply environment. | `string` | n/a | yes |
 | <a name="input_gateway_elastic_ip"></a> [gateway\_elastic\_ip](#input\_gateway\_elastic\_ip) | Gateway Elastic IP exported by the gateway stack. | `string` | n/a | yes |
 | <a name="input_wireguard_record_names"></a> [wireguard\_record\_names](#input\_wireguard\_record\_names) | DNS names for the three WireGuard endpoints. Records must remain DNS-only. | <pre>object({<br/>    wg-users    = string<br/>    wg-personal = string<br/>    wg-nodes    = string<br/>  })</pre> | n/a | yes |
 | <a name="input_zone_id"></a> [zone\_id](#input\_zone\_id) | Cloudflare zone ID. DNS resources remain scaffold-only. | `string` | n/a | yes |

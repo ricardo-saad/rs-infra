@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.rs-platform.invalid/gateway/peer-acknowledgement-v1.json",
+  "title": "RS Gateway exact peer manifest acknowledgement",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gateway_id",
+    "delivery_id",
+    "interface",
+    "generation",
+    "manifest_digest",
+    "outcome"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "gateway_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "delivery_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "interface": {
+      "enum": [
+        "wg-users",
+        "wg-nodes"
+      ]
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "manifest_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "outcome": {
+      "const": "applied"
+    }
+  }
+}

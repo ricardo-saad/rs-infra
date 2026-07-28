@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import pathlib
 import re
@@ -11,9 +12,28 @@ import tempfile
 INTERFACE_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,15}$")
 
 
-def render(wan_interface: str) -> str:
+def validate_ssh_sources(value: str) -> tuple[str, ...]:
+    try:
+        networks = tuple(
+            str(ipaddress.IPv4Network(item, strict=True))
+            for item in value.split(",")
+        )
+    except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as error:
+        raise ValueError("invalid SSH source allowlist") from error
+    if (
+        not networks
+        or len(networks) > 8
+        or any(not network.endswith("/32") for network in networks)
+        or len(networks) != len(set(networks))
+    ):
+        raise ValueError("SSH sources must be one to eight unique IPv4 /32s")
+    return networks
+
+
+def render(wan_interface: str, ssh_sources: str) -> str:
     if not INTERFACE_RE.fullmatch(wan_interface):
         raise ValueError("invalid WAN interface")
+    ssh_source_set = ", ".join(validate_ssh_sources(ssh_sources))
     return f"""flush ruleset
 table inet rs_gateway {{
   chain users_authorize {{
@@ -23,6 +43,7 @@ table inet rs_gateway {{
     type filter hook input priority 0; policy drop;
     iifname "lo" accept
     ct state established,related accept
+    iifname "{wan_interface}" ip saddr {{ {ssh_source_set} }} tcp dport 22 accept
     iifname "{wan_interface}" udp dport {{ 51820, 51822, 51823 }} accept
     iifname {{ "wg-users", "wg-personal", "wg-nodes" }} udp dport 53 accept
     iifname {{ "wg-users", "wg-personal", "wg-nodes" }} tcp dport 53 accept
@@ -87,7 +108,8 @@ table ip rs_gateway_nat {{
 
 def main() -> None:
     wan_interface = os.environ.get("WAN_INTERFACE", "")
-    content = render(wan_interface)
+    ssh_sources = os.environ.get("SSH_INGRESS_IPV4_CIDRS", "")
+    content = render(wan_interface, ssh_sources)
     destination = pathlib.Path("/run/rs-gateway/nftables.conf")
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(dir=destination.parent)
