@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `rs-infra` is Infrastructure as Code for RS Platform: Terraform for AWS and Cloudflare, Packer-built immutable machine images, a Talos/Kubernetes node provisioner, operator-only secret tools, and a one-time Argo CD bootstrap. It provisions infrastructure and deploys no application workloads.
 
-**Status:** early-stage. Only `terraform/gateway/` and `images/gateway/` contain real implementation. Every other `terraform/` stack is a scaffold (variables/outputs/provider wiring but no resources). `argocd/`, `provisioner/`, `tools/secret/`, `tools/talos-seed/`, and `images/home/` are README-only placeholders with no code yet. Per-stack cloud plan/apply CI is scaffolded but cannot run until the state backend, immutable GitHub OIDC identity contracts, GitHub configuration, and committed provider lock files are in place.
+**Status:** early-stage. `terraform/gateway/`, `terraform/bootstrap/`, and `images/gateway/` contain real implementation; neither has been applied to a real account. Every other `terraform/` stack is a scaffold (variables/outputs/provider wiring but no resources). `argocd/`, `provisioner/`, `tools/secret/`, `tools/talos-seed/`, and `images/home/` are README-only placeholders with no code yet. Per-stack cloud plan/apply CI is scaffolded but cannot run until an operator applies `terraform/bootstrap/` (see its README) and the resulting GitHub OIDC identity, state/plan buckets, and committed provider lock files are configured.
 
 ### Key Directories
 
-- `terraform/bootstrap/` — reserved for the versioned S3 state backend, GitHub OIDC providers, and CI plan/apply roles. Scaffold only, no resources yet.
+- `terraform/bootstrap/` — the versioned S3 state backend (native locking, no DynamoDB table), the private Object-Lock-protected plan bucket, the GitHub OIDC provider, and the `rs-infra-plan`/`rs-infra-apply` CI roles. Implemented, but operator-applied by design: it is deliberately excluded from `terraform-plan.sh`/`terraform-apply.sh`'s `network|gateway|cluster|dns` stack allowlist and has no GitHub Actions workflow of its own, so it cannot depend on the CI identity it creates.
 - `terraform/network/` — the single-AZ gateway VPC: public gateway subnet, private Talos subnet, private game subnet, route tables, IGW, S3 gateway endpoint. Implemented.
 - `terraform/cluster/` — reserved for the AWS-local Talos provisioner, three logical node-slot envelopes, private DNS, and service-account federation. Scaffold only.
 - `terraform/gateway/` — the replaceable EC2 hybrid gateway: instance, Elastic IP, WireGuard security group rules, IAM bootstrap/runtime roles, KMS key, two Secrets Manager containers, CloudWatch alarms. The only fully implemented AWS stack.
@@ -69,7 +69,7 @@ There is no "run the app" here — the fastest way to prove a change is sound is
 - Naming: resource local names are singular and describe the thing, not the type (`aws_instance.gateway`, `aws_vpc.platform`, `aws_secretsmanager_secret.wireguard`); AWS-side `Name` tags and physical names use `local.name_prefix` (`"${var.project}-${var.environment}"`, or `-gateway` suffixed in the gateway stack) so resources are traceable to project/environment by name alone.
 - Tagging: every stack merges the same five tags via `local.required_tags`: `Project`, `Environment`, `Owner`, `ManagedBy = "Terraform"`, `CostCenter`, plus caller-supplied `additional_tags`. Apply this via `provider "aws" { default_tags { tags = local.required_tags } }`, not per-resource `tags` blocks, except for the resource-specific `Name` (and sometimes `Tier`/`Component`) tags.
 - Version pinning: `terraform >= 1.7.0` in every stack's `versions.tf`; the pinned CLI version for CI/local dev is `.terraform-version` = `1.15.8` (keep these in sync — CI's `static-validation.yml` fails if `.terraform-version` doesn't match its own `TERRAFORM_VERSION` env var). Providers are `~>` pinned to major: `hashicorp/aws ~> 6.0`, `cloudflare/cloudflare ~> 5.0`.
-- Backend/state: one S3 backend, one state per stack, backend config supplied only at `init` time (`-backend-config=...`), never committed. State naming/bootstrap sequencing is explicitly unresolved — don't invent a bucket/key convention.
+- Backend/state: one S3 backend, one state per stack, backend config supplied only at `init` time (`-backend-config=...`), never committed. State object keys for the four deployable stacks are the `state_object_keys` input to `terraform/bootstrap/` (one authoritative source, echoed back as its per-stack `*_state_key` outputs) — don't invent a separate bucket/key convention elsewhere.
 - Secrets: Terraform may create secret **containers** (Secrets Manager secret, KMS key, IAM policy, SSM path permission) and never a secret **version** or value. No `aws_secretsmanager_secret_version`, no rendered Talos machine config, no key material, anywhere in `.tf` files or in state. `terraform.tfvars` (the real, non-example file) must never be committed — only `terraform.tfvars.example` with placeholder/documentation-only values (`.gitignore` doesn't explicitly list `terraform.tfvars`, so be deliberate about never adding it).
 - `terraform.tfvars.example` is required for any stack whose variables aren't self-evident from defaults (`network`, `dns`, `gateway` all have one); every value in it must be a documentation-only placeholder, never a real deployed ID.
 
@@ -110,7 +110,7 @@ Packer, gateway image (from `images/gateway/`, all `RS_GATEWAY_*`/`PACKER_AMAZON
 ./scripts/build.sh          # validates env, verifies source AMI, installs the amazon plugin, runs packer build
 ```
 
-There is no `terraform plan`/`apply` command to run yet for any stack — the backend is deliberately unconfigured and CI has no cloud credentials. Don't try to `plan`/`apply` against a real account from this repo's current state; that automation doesn't exist yet.
+There is no `terraform plan`/`apply` CI automation for any stack yet — the four deployable stacks' backends are unconfigured until an operator applies `terraform/bootstrap/`, and CI has no cloud credentials regardless. `terraform/bootstrap/` itself is the one exception: it is meant to be planned/applied locally by a documented operator identity, per its own README's bootstrap sequence — don't do this against a real account without that context.
 
 ## Testing
 

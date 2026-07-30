@@ -5,3 +5,7 @@ provider "aws" {
     tags = local.required_tags
   }
 }
+
+data "aws_caller_identity" "current" {}
+
+data "aws_partition" "current" {}
