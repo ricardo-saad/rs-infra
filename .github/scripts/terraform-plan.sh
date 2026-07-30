@@ -175,10 +175,16 @@ jq -n \
     run_attempt: ($run_attempt | tonumber)
   }' >"${pointer_file}"
 
-aws s3 cp "${bundle_file}" "s3://${TF_PLAN_BUCKET}/${bundle_object_key}" \
-  --only-show-errors \
-  --sse aws:kms \
-  --sse-kms-key-id "${TF_PLAN_KMS_KEY_ID}" >/dev/null
+# The bucket policy denies this exact PutObject unless If-None-Match is
+# present, so a bug or retry can never silently replace a bundle a reviewer
+# already approved; aws s3 cp does not support conditional headers.
+aws s3api put-object \
+  --bucket "${TF_PLAN_BUCKET}" \
+  --key "${bundle_object_key}" \
+  --body "${bundle_file}" \
+  --if-none-match '*' \
+  --server-side-encryption aws:kms \
+  --ssekms-key-id "${TF_PLAN_KMS_KEY_ID}" >/dev/null
 aws s3 cp "${pointer_file}" "s3://${TF_PLAN_BUCKET}/${pointer_object_key}" \
   --only-show-errors \
   --sse aws:kms \

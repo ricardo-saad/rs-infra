@@ -1,0 +1,14 @@
+# Documentation-only values. Do not commit deployed IDs, inventory, or secrets.
+github_owner                = "example-owner"
+github_repository_name      = "rs-infra"
+github_repository_id        = "000000000"
+github_repository_owner_id  = "000000000"
+owner                       = "example-owner"
+cost_center                 = "example-cost-center"
+
+state_object_keys = {
+  network = "network/terraform.tfstate"
+  gateway = "gateway/terraform.tfstate"
+  cluster = "cluster/terraform.tfstate"
+  dns     = "dns/terraform.tfstate"
+}

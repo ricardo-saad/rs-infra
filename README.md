@@ -2,11 +2,12 @@
 
 Infrastructure as code for RS Platform.
 
-> **Status:** Initial repository scaffold complete. The EC2 gateway Terraform
-> and immutable-image source are implemented but have not been built or
-> applied. All other components remain contract-only scaffolds. Per-stack
-> cloud plan and apply workflows are scaffolded but remain inactive until the
-> backend, OIDC roles, GitHub variables, secrets, and provider lock files
+> **Status:** Initial repository scaffold complete. The EC2 gateway Terraform,
+> immutable-image source, and the bootstrap state/OIDC/CI-role stack are
+> implemented but have not been applied to a real account. All other
+> components remain contract-only scaffolds. Per-stack cloud plan and apply
+> workflows are scaffolded but remain inactive until bootstrap has been
+> applied by an operator and the resulting GitHub variables and secrets
 > described below are configured.
 
 Repository scope, accountability, review duties, and cross-repository
@@ -164,17 +165,27 @@ deployment to `main`, and require an operator reviewer.
 
 Before the first plan:
 
-1. Bootstrap the versioned, public-access-blocked state and plan buckets and
-   their KMS keys outside these four stacks.
-2. Configure native S3 state locking and commit a generated
-   `.terraform.lock.hcl` in each deployable stack.
-3. Configure immutable-ID-bound GitHub OIDC trust for the exact workflow path
-   and event/environment. The plan role needs provider read access, state read
-   plus native lock-object access, KMS use, and write access to its private
-   plan prefix. The apply role needs the corresponding state/provider mutation
-   access and read/write access to reviewed plans and private apply logs.
-4. Enable S3 versioning, retention/lifecycle, bucket-owner enforcement,
-   SSE-KMS, and block public access on the plan bucket. Deny overwrites of
+1. An operator applies [`terraform/bootstrap/`](terraform/bootstrap/) locally
+   (see its README for the exact sequence): the versioned, public-access-
+   blocked state bucket and its KMS key; the private, Object-Lock-enabled plan
+   bucket and its KMS key; the GitHub OIDC provider; and the `rs-infra-plan`
+   and `rs-infra-apply` roles. `bootstrap` is deliberately excluded from the
+   four cloud workflows above and has no `terraform-bootstrap.yml`, so this
+   step cannot be a pull-request plan/apply.
+2. Commit a generated `.terraform.lock.hcl` in each of the four deployable
+   stacks (`bootstrap`'s own lock file is committed already).
+3. `bootstrap`'s OIDC trust already binds the exact workflow path and
+   event/environment to the immutable `repository_id`/`repository_owner_id`
+   claims: the plan role at `refs/pull/*/merge`, the apply role at
+   `refs/heads/main` through the `apply` environment. Its `rs-infra-plan` role
+   grants provider read access, state read plus native lock-object access, KMS
+   use, and write access to each stack's private plan prefix; `rs-infra-apply`
+   grants the corresponding state/provider mutation access and read/write
+   access to reviewed plans and private apply logs, with explicit denies on
+   secret-value access and on modifying its own trust, the OIDC provider, or
+   the backend buckets' governance controls.
+4. The plan bucket already enables S3 versioning, Object Lock, bucket-owner
+   enforcement, SSE-KMS, and blocked public access, and denies overwrites of
    immutable plan bundles; only each PR's `latest.json` pointer is mutable.
 5. Require the applicable `Reviewed plan` check before merge and use squash
    merges. A direct push, ambiguous merged-PR association, stale stack tree,
