@@ -1,5 +1,5 @@
 output "github_oidc_provider_arn" {
-  description = "GitHub Actions OIDC provider trusted by both CI roles."
+  description = "GitHub Actions OIDC provider trusted by the plan, apply, and image-build CI roles."
   value       = aws_iam_openid_connect_provider.github_actions.arn
 }
 
@@ -11,6 +11,16 @@ output "plan_role_arn" {
 output "apply_role_arn" {
   description = "Mutating Terraform apply role; set as the TF_APPLY_ROLE_ARN repository variable."
   value       = aws_iam_role.apply.arn
+}
+
+output "image_build_role_arn" {
+  description = "Gateway AMI build role; set as the IMAGE_BUILD_ROLE_ARN repository variable."
+  value       = aws_iam_role.image_build.arn
+}
+
+output "image_builder_instance_profile_name" {
+  description = "Build-only SSM instance profile; set as the IMAGE_BUILDER_INSTANCE_PROFILE repository variable."
+  value       = aws_iam_instance_profile.packer_builder.name
 }
 
 output "state_bucket_name" {

@@ -1,9 +1,9 @@
 # Gateway image
 
-This directory builds the disposable ARM64 EC2 gateway appliance described by
-the platform gateway contract. The image contains the host implementation; it
-does not contain credentials, peer inventory, private topology, or Terraform
-configuration.
+This directory builds the disposable Ubuntu Server 26.04 LTS ARM64 EC2 gateway
+appliance described by the platform gateway contract. The image contains the
+host implementation; it does not contain credentials, peer inventory, private
+topology, or Terraform configuration.
 
 The effective interface contract is deliberately fixed:
 
@@ -24,8 +24,11 @@ values are not yet recorded in the architecture repository:
 ```sh
 export PACKER_AMAZON_PLUGIN_VERSION='<exact-version>'
 export RS_GATEWAY_PACKER_VERSION='<exact-version>'
+export RS_GATEWAY_SESSION_MANAGER_PLUGIN_VERSION='<exact-version>'
 export RS_GATEWAY_SOURCE_AMI='ami-...'
-export RS_GATEWAY_SOURCE_AMI_OWNER='123456789012'
+export RS_GATEWAY_SOURCE_AMI_OWNER='099720109477'
+export RS_GATEWAY_BUILD_SUBNET_ID='subnet-...'
+export RS_GATEWAY_BUILDER_INSTANCE_PROFILE='rs-infra-image-builder'
 export RS_GATEWAY_ROOT_VOLUME_SIZE='<approved-gib>'
 export RS_GATEWAY_WIREGUARD_VERSION='<apt-version>'
 export RS_GATEWAY_NFTABLES_VERSION='<apt-version>'
@@ -41,23 +44,45 @@ export RS_GATEWAY_APACHE2_UTILS_VERSION='<apt-version>'
 export RS_GATEWAY_CURL_VERSION='<apt-version>'
 export RS_GATEWAY_CA_CERTIFICATES_VERSION='<apt-version>'
 export RS_GATEWAY_PYTHON3_VERSION='<apt-version>'
-export RS_GATEWAY_OPENSSH_SERVER_VERSION='<apt-version>'
+export RS_GATEWAY_SSM_AGENT_REVISION='<approved-snap-revision>'
 export RS_GATEWAY_BUILD_VERSION='<immutable-release-id>'
 ./scripts/build.sh
 ```
 
-`scripts/build.sh` verifies that the immutable source AMI is ARM64 and owned
-by the declared account before invoking Packer. The build identity therefore
-needs only AMI build/publication permissions. No runtime secret permission is
-used while building.
+Resolve the latest candidate in `eu-west-2` through
+`/aws/service/canonical/ubuntu/server/resolute/stable/current/arm64/hvm/ebs-gp3/ami-id`,
+review it, and pass the resulting immutable ID. `scripts/build.sh` requires
+Canonical owner `099720109477` and verifies the ID, ARM64 architecture, and
+Ubuntu Server 26.04 gp3 image name before invoking Packer.
+
+Packer reaches the temporary builder with its SSH communicator tunneled
+through SSM Session Manager in the explicit build subnet. The build host needs
+Packer, AWS CLI, and the AWS Session Manager plugin. The build identity may
+pass only the dedicated `rs-infra-image-builder` profile created by
+`terraform/bootstrap`; it cannot create IAM identities or read runtime
+secrets. The final provisioner purges OpenSSH before the AMI snapshot is
+taken. `packer-manifest.json` records the source and resulting AMI identifiers.
+
+## Pull-request build
+
+`.github/workflows/image-gateway.yml` performs a real Packer build when a
+trusted same-repository pull request changes this directory. Fork pull
+requests remain credential-free and receive only static validation. The
+workflow assumes the dedicated `rs-infra-image-build` OIDC role, derives a
+unique build version from the pull request and workflow run, uploads the
+manifest, and comments the resulting candidate AMI ID on the pull request.
+
+Configure the repository variables listed in the root README before enabling
+the workflow. The workflow creates a review candidate, not a promoted runtime
+image; promotion still requires the documented SSM-only boot and acceptance
+tests.
 
 ## Runtime input
 
 Terraform/user data writes `/etc/rs-gateway/runtime.env` using
 `runtime.env.example` as its allowlist. These are non-secret identifiers only:
 region, the two exact Secrets Manager identifiers, the public-key Parameter
-Store prefix, CloudWatch namespace, WAN device, operator SSH `/32` allowlist,
-and immutable build version.
+Store prefix, CloudWatch namespace, WAN device, and immutable build version.
 
 The normal boot target runs the fail-closed loader. It retrieves both
 `AWSCURRENT` values, validates them in memory, writes derived configuration
@@ -68,11 +93,10 @@ nftables, reconciliation, and AdGuard stopped.
 The baseline firewall gives `wg-users` public egress with private destinations
 denied, gives `wg-personal` private-range and enrolled-node access without
 internet egress, and masquerades public egress arriving from the Talos subnet.
-It admits TCP/22 on the WAN only from the same one-to-eight operator `/32`s
-enforced by the EC2 security group. The image installs an explicitly pinned
-OpenSSH server with key-only `ubuntu` access; root login, passwords,
-agent/X11/TCP forwarding, tunnels, and user environment injection are
-disabled.
+It admits no inbound TCP from the WAN. The final image contains no OpenSSH
+server; SSM Session Manager is the only operating-system administration path.
+The approved SSM Agent snap revision is verified, enabled, and held against
+runtime refresh so updates arrive through reviewed image replacement.
 The gateway security group scopes that same-interface NAT path to the declared
 Talos CIDR. `wg-nodes` has no WAN or node-to-node path, and named relays remain
 default-denied until the separately versioned routing policy installs them.

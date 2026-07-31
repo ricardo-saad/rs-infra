@@ -331,12 +331,9 @@ class ManifestValidationTests(unittest.TestCase):
 
 class FirewallTests(unittest.TestCase):
     def test_baseline_is_default_drop_with_only_current_public_ports(self):
-        policy = render_nftables.render("ens5", "198.51.100.1/32")
+        policy = render_nftables.render("ens5")
         self.assertGreaterEqual(policy.count("policy drop"), 2)
-        self.assertIn(
-            'iifname "ens5" ip saddr { 198.51.100.1/32 } tcp dport 22 accept',
-            policy,
-        )
+        self.assertNotIn("tcp dport 22", policy)
         self.assertIn("51820, 51822, 51823", policy)
         self.assertNotIn("51821", policy)
         self.assertIn('iifname "wg-users" jump users_authorize', policy)
@@ -345,7 +342,7 @@ class FirewallTests(unittest.TestCase):
         self.assertIn('iifname "wg-users" oifname "ens5" masquerade', policy)
 
     def test_baseline_includes_private_role_and_talos_nat_contracts(self):
-        policy = render_nftables.render("ens5", "198.51.100.1/32")
+        policy = render_nftables.render("ens5")
         self.assertIn('iifname "wg-personal" ip daddr', policy)
         self.assertIn('iifname "wg-personal" oifname "ens5" drop', policy)
         self.assertIn('iifname "ens5" ip saddr', policy)
@@ -355,26 +352,7 @@ class FirewallTests(unittest.TestCase):
     def test_wan_interface_is_not_shell_or_nft_injectable(self):
         for value in ('ens5"; accept', "ens5\nflush ruleset", ""):
             with self.assertRaises(ValueError):
-                render_nftables.render(value, "198.51.100.1/32")
-
-    def test_ssh_sources_are_exact_unique_ipv4_hosts(self):
-        policy = render_nftables.render(
-            "ens5",
-            "198.51.100.10/32,203.0.113.20/32",
-        )
-        self.assertIn(
-            "ip saddr { 198.51.100.10/32, 203.0.113.20/32 } tcp dport 22 accept",
-            policy,
-        )
-        for value in (
-            "",
-            "0.0.0.0/0",
-            "198.51.100.0/24",
-            "2001:db8::1/128",
-            "198.51.100.10/32,198.51.100.10/32",
-        ):
-            with self.assertRaises(ValueError):
-                render_nftables.render("ens5", value)
+                render_nftables.render(value)
 
 
 class ControlPlaneAgentTests(unittest.TestCase):
@@ -485,26 +463,14 @@ class ControlPlaneAgentTests(unittest.TestCase):
 
 
 class ImageLayoutTests(unittest.TestCase):
-    def test_operator_ssh_is_key_only_and_non_forwarding(self):
-        sshd = (
-            ROOT
-            / "rootfs"
-            / "etc"
-            / "ssh"
-            / "sshd_config.d"
-            / "90-rs-gateway.conf"
-        ).read_text(encoding="utf-8")
-        for directive in (
-            "PermitRootLogin no",
-            "PasswordAuthentication no",
-            "KbdInteractiveAuthentication no",
-            "AuthenticationMethods publickey",
-            "AllowUsers ubuntu",
-            "AllowAgentForwarding no",
-            "AllowTcpForwarding no",
-            "PermitTunnel no",
-        ):
-            self.assertIn(directive, sshd)
+    def test_final_image_removes_openssh_server(self):
+        self.assertFalse(
+            (ROOT / "rootfs/etc/ssh/sshd_config.d/90-rs-gateway.conf").exists()
+        )
+        install = (ROOT / "scripts/install.sh").read_text(encoding="utf-8")
+        self.assertIn("apt-get purge -y openssh-server", install)
+        self.assertIn("systemctl disable --now ssh.service", install)
+        self.assertNotIn('"openssh-server=', install)
 
     def test_ipv6_forwarding_is_explicitly_disabled(self):
         sysctl = (
@@ -582,14 +548,31 @@ class ImageLayoutTests(unittest.TestCase):
         self.assertNotIn("ListenStream=", unit)
         self.assertIn("ConditionPathExists=/etc/rs-gateway/control-plane.env", unit)
 
-    def test_openssh_server_is_an_explicit_image_pin(self):
+    def test_builder_uses_ssm_and_pins_the_runtime_agent(self):
         packer = (ROOT / "gateway.pkr.hcl").read_text(encoding="utf-8")
         build = (ROOT / "scripts/build.sh").read_text(encoding="utf-8")
         install = (ROOT / "scripts/install.sh").read_text(encoding="utf-8")
-        self.assertIn('variable "openssh_server_version"', packer)
-        self.assertIn("RS_GATEWAY_OPENSSH_SERVER_VERSION", build)
-        self.assertIn('"openssh-server=$OPENSSH_SERVER_VERSION"', install)
-        self.assertIn("/usr/sbin/sshd -t", install)
+        self.assertIn('ssh_interface', packer)
+        self.assertIn('"session_manager"', packer)
+        self.assertIn("iam_instance_profile", packer)
+        self.assertIn("RS_GATEWAY_BUILDER_INSTANCE_PROFILE", build)
+        self.assertIn("RS_GATEWAY_BUILD_SUBNET_ID", build)
+        self.assertIn('default = "t4g.small"', packer)
+        self.assertIn("RS_GATEWAY_SESSION_MANAGER_PLUGIN_VERSION", build)
+        self.assertIn("RS_GATEWAY_SSM_AGENT_REVISION", build)
+        self.assertIn("ubuntu-resolute-26.04-arm64-server-", build)
+        self.assertIn("snap refresh --hold=forever amazon-ssm-agent", install)
+
+    def test_image_workflow_is_path_scoped_and_fork_safe(self):
+        workflow = (
+            ROOT.parents[1] / ".github/workflows/image-gateway.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("- images/gateway/**", workflow)
+        self.assertIn("head.repo.full_name == github.repository", workflow)
+        self.assertIn("head.repo.full_name != github.repository", workflow)
+        self.assertIn("IMAGE_BUILD_ROLE_ARN", workflow)
+        self.assertIn("IMAGE_BUILDER_INSTANCE_PROFILE", workflow)
+        self.assertNotIn("\n  push:", workflow)
 
     def test_json_schemas_parse_and_forbid_unknown_properties(self):
         schemas = ROOT / "rootfs/usr/lib/rs-gateway/schemas"
