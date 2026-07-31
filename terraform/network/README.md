@@ -11,6 +11,12 @@ created.
 
 The backend block is deliberately partial and must be configured at init time.
 
+## Delivery
+
+Changes to this stack are planned by `.github/workflows/terraform-network.yml`
+on trusted pull requests. Merging the reviewed change applies that exact saved
+plan through the protected `apply` environment.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
