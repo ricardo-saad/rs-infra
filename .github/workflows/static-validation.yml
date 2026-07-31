@@ -42,10 +42,34 @@ jobs:
             test -s "${readme}"
           done
 
-          if rg --line-number --pcre2 \
-            '^\s*uses:\s+(?!\./)[^@\s]+@(?![0-9a-f]{40}(?:\s+#.*)?$)\S+' \
-            .github/workflows; then
-            echo "GitHub Actions must use full commit SHAs." >&2
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          invalid = []
+          external = re.compile(r"^[^@\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
+          for path in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
+              for number, line in enumerate(path.read_text().splitlines(), 1):
+                  stripped = line.strip()
+                  if not stripped.startswith("uses:"):
+                      continue
+                  value = stripped.removeprefix("uses:").strip()
+                  if value.startswith("./"):
+                      continue
+                  if not external.fullmatch(value):
+                      invalid.append(f"{path}:{number}:{value}")
+
+          if invalid:
+              print("GitHub Actions must use full commit SHAs:", file=sys.stderr)
+              print("\n".join(invalid), file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
+          if rg --files-with-matches 'aws-actions/configure-aws-credentials@' \
+            .github/workflows |
+            rg -v '/_reusable-'; then
+            echo "AWS credential steps must live only in trusted reusable workflows." >&2
             exit 1
           fi
 
@@ -63,6 +87,7 @@ jobs:
         uses: reviewdog/action-actionlint@50842263c20a7c46bd0065b9e624d3c569db061e # v1.73.0
         with:
           fail_level: any
+          filter_mode: nofilter
           reporter: local
 
   secrets:
@@ -157,6 +182,7 @@ jobs:
           fail-on-diff: "true"
           find-dir: terraform
           git-push: "false"
+          indention: "2"
           output-file: README.md
           output-method: inject
 

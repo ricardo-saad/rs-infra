@@ -132,15 +132,17 @@ The remaining gates are deferred, not silently omitted:
 
 Third-party actions are pinned to full commit SHAs. The static workflow grants
 only `contents: read`; it has no OIDC, provider, state, Talos, or Kubernetes
-access. Each deployment workflow is isolated to one stack. A trusted
-same-repository pull request assumes the plan role and stores the complete plan
-as an SSE-KMS-encrypted private S3 object. GitHub receives only aggregate
-change counts and the plan digest. On merge, the protected `apply` environment
-assumes the apply role and consumes that exact plan only after verifying its
-digest, PR head, stack tree, state key, and Terraform version. Untrusted forks
-never receive an OIDC token, provider credentials, secrets, or state access.
-Trusted gateway-image pull requests assume a separate, secret-blind image role
-and publish the Packer manifest as a workflow artifact.
+access. Path-filtered per-stack workflows are credential-free callers; only
+the IAM-bound `_reusable-terraform-plan.yml` and
+`_reusable-terraform-apply.yml` workflows may assume cloud roles. A trusted
+same-repository pull request stores the complete plan as an SSE-KMS-encrypted
+private S3 object. GitHub receives only aggregate change counts and the plan
+digest. On merge, the protected `apply` environment consumes that exact plan
+only after verifying its digest, PR head, stack tree, state key, Terraform
+version, and trusted reusable-workflow path. Untrusted forks never receive an
+OIDC token, provider credentials, secrets, or state access. Trusted gateway
+image pull requests delegate to a separately IAM-bound, secret-blind reusable
+workflow and publish the Packer manifest as a workflow artifact.
 
 ### Cloud workflow configuration
 
@@ -160,6 +162,11 @@ workflows:
 | `TF_STATE_KMS_KEY_ID` | State-bucket KMS key ID or ARN |
 | `TF_PLAN_BUCKET` | Private reviewed-plan and apply-log bucket |
 | `TF_PLAN_KMS_KEY_ID` | Reviewed-plan bucket KMS key ID or ARN |
+| `TF_NETWORK_CI_ENABLED` | Set to `true` after network inputs are configured |
+| `TF_GATEWAY_CI_ENABLED` | Set to `true` after gateway inputs are configured |
+| `TF_CLUSTER_CI_ENABLED` | Set to `true` after cluster inputs are configured |
+| `TF_DNS_CI_ENABLED` | Set to `true` after DNS and Cloudflare inputs are configured |
+| `IMAGE_GATEWAY_CI_ENABLED` | Set to `true` after image inputs and build subnet are configured |
 | `TF_NETWORK_STATE_KEY` | Network stack state object key |
 | `TF_GATEWAY_STATE_KEY` | Gateway stack state object key |
 | `TF_CLUSTER_STATE_KEY` | Cluster stack state object key |
@@ -208,9 +215,10 @@ Before the first plan:
    stacks (`bootstrap`'s own lock file is committed already).
 3. `bootstrap`'s OIDC trust already binds the exact workflow path and
    event/environment to the immutable `repository_id`/`repository_owner_id`
-   claims: the plan and image-build roles at their exact
-   `refs/pull/*/merge` workflow paths, and the apply role at `refs/heads/main`
-   through the `apply` environment. Its `rs-infra-plan` role
+   claims: the plan and image-build roles bind their exact reusable workflows
+   at `refs/pull/*/merge`, and the apply role binds
+   `_reusable-terraform-apply.yml@refs/heads/main` through the `apply`
+   environment. Its `rs-infra-plan` role
    grants provider read access, state read plus native lock-object access, KMS
    use, and write access to each stack's private plan prefix; `rs-infra-apply`
    grants the corresponding state/provider mutation access and read/write

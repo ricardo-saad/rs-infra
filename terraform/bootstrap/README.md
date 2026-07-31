@@ -28,10 +28,10 @@ in [`iam.tf`](iam.tf)).
   trusted by the three CI roles.
 - `rs-infra-plan`: read-only provider access, `s3:GetObject` on the four exact
   state keys, take/release of the native lock objects, and write access to its
-  own stack's plan-bucket prefix. Trusted only from
-  `refs/pull/*/merge` on the four `terraform-*.yml` workflows, bound to the
-  immutable `repository_id`/`repository_owner_id` claims, not the repository's
-  current name.
+  own stack's plan-bucket prefix. Trusted only from `refs/pull/*/merge` through
+  `_reusable-terraform-plan.yml`, bound to the immutable
+  `repository_id`/`repository_owner_id` claims, not the repository's current
+  name.
 - `rs-infra-apply`: the corresponding mutating provider access for what
   `network` and `gateway` actually provision today, full state read/write,
   and reviewed-plan read plus apply-log write. Trusted only from
@@ -44,7 +44,7 @@ in [`iam.tf`](iam.tf)).
   `iam:PassRole` limited to the exact `rs-infra-image-builder` role and
   explicit denial of secret-value writes and reads. Trusted only from
   same-repository pull-request merge refs through
-  `.github/workflows/image-gateway.yml`.
+  `.github/workflows/_reusable-image-gateway-build.yml`.
 - `rs-infra-image-builder`: an EC2-assumable instance profile containing only
   the SSM control/data-channel permissions required by Packer's temporary
   builder. It has no gateway runtime secret or Parameter Store permissions.

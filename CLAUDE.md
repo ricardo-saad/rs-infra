@@ -22,8 +22,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `tools/talos-seed/` — reserved for the one-time in-memory Talos recovery-bundle creation tool. README placeholder only.
 - `argocd/bootstrap/` — reserved for the one-time Argo CD install and root application. README placeholder only.
 - `.github/workflows/static-validation.yml` — fork-safe checks for every pull request.
-- `.github/workflows/terraform-{network,gateway,cluster,dns}.yml` — trusted-PR plans and protected-main applies.
-- `.github/workflows/image-gateway.yml` — real Packer AMI builds for trusted same-repository pull requests changing `images/gateway/`; forks receive no OIDC identity.
+- `.github/workflows/terraform-{network,gateway,cluster,dns}.yml` — path-filtered, credential-free callers for the reusable Terraform workflows.
+- `.github/workflows/_reusable-terraform-{plan,apply}.yml` — the only Terraform workflows allowed to assume AWS roles; their exact `job_workflow_ref` paths are IAM-bound.
+- `.github/workflows/image-gateway.yml` — path-filtered, fork-safe image caller; `_reusable-image-gateway-build.yml` owns the OIDC-backed build.
 
 ### Architecture Notes
 
@@ -41,7 +42,7 @@ There is no "run the app" here — the fastest way to prove a change is sound is
 1. `terraform fmt -recursive terraform` — fix formatting before anything else.
 2. `terraform -chdir=terraform/<stack> init -backend=false -input=false && terraform -chdir=terraform/<stack> validate -no-color` — for every stack you touched.
 3. `tflint --chdir=terraform/<stack> --format=compact` — needs tflint `v0.64.0` installed locally to match CI exactly.
-4. If you changed `variables.tf`/`outputs.tf`/resources in a stack, regenerate its README's `terraform-docs` block (run the `terraform-docs` CLI with `--output-file README.md --output-method inject`, or expect the CI `terraform-docs` job to fail the diff).
+4. If you changed `variables.tf`/`outputs.tf`/resources in a stack, regenerate its README's `terraform-docs` block with `terraform-docs markdown table --indent 2 --output-file README.md --output-mode inject terraform/<stack>`, or expect CI to fail the diff.
 5. If you touched `images/gateway/`, run `python3 -m unittest discover -s images/gateway/tests -v` — this needs only stdlib Python, no AWS credentials or Packer.
 
 ## Where Things Go

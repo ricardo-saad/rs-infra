@@ -564,15 +564,21 @@ class ImageLayoutTests(unittest.TestCase):
         self.assertIn("snap refresh --hold=forever amazon-ssm-agent", install)
 
     def test_image_workflow_is_path_scoped_and_fork_safe(self):
-        workflow = (
+        caller = (
             ROOT.parents[1] / ".github/workflows/image-gateway.yml"
         ).read_text(encoding="utf-8")
-        self.assertIn("- images/gateway/**", workflow)
-        self.assertIn("head.repo.full_name == github.repository", workflow)
-        self.assertIn("head.repo.full_name != github.repository", workflow)
-        self.assertIn("IMAGE_BUILD_ROLE_ARN", workflow)
-        self.assertIn("IMAGE_BUILDER_INSTANCE_PROFILE", workflow)
-        self.assertNotIn("\n  push:", workflow)
+        reusable = (
+            ROOT.parents[1]
+            / ".github/workflows/_reusable-image-gateway-build.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("- images/gateway/**", caller)
+        self.assertIn("head.repo.full_name == github.repository", caller)
+        self.assertIn("head.repo.full_name != github.repository", caller)
+        self.assertIn("_reusable-image-gateway-build.yml", caller)
+        self.assertNotIn("configure-aws-credentials", caller)
+        self.assertIn("IMAGE_BUILD_ROLE_ARN", reusable)
+        self.assertIn("IMAGE_BUILDER_INSTANCE_PROFILE", reusable)
+        self.assertNotIn("\n  push:", caller)
 
     def test_json_schemas_parse_and_forbid_unknown_properties(self):
         schemas = ROOT / "rootfs/usr/lib/rs-gateway/schemas"

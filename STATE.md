@@ -10,8 +10,9 @@ path to resume work. It contains no deployed inventory or secret values.
 
 ### Terraform delivery
 
-- Added one GitHub Actions workflow for each deployable stack: `network`,
-  `gateway`, `cluster`, and `dns`.
+- Added one path-filtered caller for each deployable stack plus IAM-bound
+  reusable plan/apply workflows. Credential-bearing steps cannot live in the
+  stack-specific callers.
 - Trusted same-repository pull requests create a saved Terraform plan. The
   complete plan and text rendering remain private in an SSE-KMS S3 object;
   GitHub receives only change counts and its SHA-256 digest.
@@ -33,6 +34,9 @@ path to resume work. It contains no deployed inventory or secret values.
 
 The shared workflow implementations are:
 
+- `.github/workflows/_reusable-terraform-plan.yml`
+- `.github/workflows/_reusable-terraform-apply.yml`
+- `.github/workflows/_reusable-image-gateway-build.yml`
 - `.github/scripts/terraform-plan.sh`
 - `.github/scripts/terraform-apply.sh`
 

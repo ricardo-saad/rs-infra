@@ -16,7 +16,7 @@ required_environment=(
   GITHUB_RUN_ID
   GITHUB_RUN_ATTEMPT
   GITHUB_SHA
-  GITHUB_WORKFLOW_REF
+  TRUSTED_WORKFLOW_REF
   GITHUB_OUTPUT
   GITHUB_STEP_SUMMARY
 )
@@ -129,7 +129,7 @@ jq -n \
   --arg planned_commit_sha "${GITHUB_SHA}" \
   --arg stack_tree_sha "${stack_tree_sha}" \
   --arg terraform_version "${terraform_version}" \
-  --arg workflow_ref "${GITHUB_WORKFLOW_REF}" \
+  --arg workflow_ref "${TRUSTED_WORKFLOW_REF}" \
   --arg run_id "${GITHUB_RUN_ID}" \
   --arg run_attempt "${GITHUB_RUN_ATTEMPT}" \
   '{

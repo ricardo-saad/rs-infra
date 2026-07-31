@@ -7,6 +7,8 @@ on:
       - terraform/cluster/**
       - .github/scripts/terraform-plan.sh
       - .github/scripts/terraform-apply.sh
+      - .github/workflows/_reusable-terraform-plan.yml
+      - .github/workflows/_reusable-terraform-apply.yml
       - .github/workflows/terraform-cluster.yml
   push:
     branches: [main]
@@ -14,6 +16,8 @@ on:
       - terraform/cluster/**
       - .github/scripts/terraform-plan.sh
       - .github/scripts/terraform-apply.sh
+      - .github/workflows/_reusable-terraform-plan.yml
+      - .github/workflows/_reusable-terraform-apply.yml
       - .github/workflows/terraform-cluster.yml
 
 permissions:
@@ -22,17 +26,6 @@ permissions:
 concurrency:
   group: terraform-cluster-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'apply' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  TERRAFORM_VERSION: "1.15.8"
-  STACK: cluster
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-  STATE_KEY: ${{ vars.TF_CLUSTER_STATE_KEY }}
-  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-  TF_STATE_KMS_KEY_ID: ${{ vars.TF_STATE_KMS_KEY_ID }}
-  TF_PLAN_BUCKET: ${{ vars.TF_PLAN_BUCKET }}
-  TF_PLAN_KMS_KEY_ID: ${{ vars.TF_PLAN_KMS_KEY_ID }}
 
 jobs:
   untrusted-fork:
@@ -46,103 +39,25 @@ jobs:
         run: echo "Cloud planning is skipped for untrusted forks; static validation still runs."
 
   plan:
-    name: Reviewed plan
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && vars.TF_CLUSTER_CI_ENABLED == 'true'
+    uses: ./.github/workflows/_reusable-terraform-plan.yml
     permissions:
       contents: read
       id-token: write
       pull-requests: write
-    steps:
-      - name: Check out reviewed merge
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
-      - name: Assume plan role
-        uses: aws-actions/configure-aws-credentials@acca2b1b2070338fb9fd1ca27ecee81d687e58e5 # v6.1.2
-        with:
-          role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
-          role-session-name: gha-cluster-plan
-          aws-region: ${{ env.AWS_REGION }}
-          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
-          mask-aws-account-id: true
-
-      - name: Produce private reviewed plan
-        id: plan
-        shell: bash
-        env:
-          TFVARS_CONTENT: ${{ secrets.TF_CLUSTER_VARS }}
-          GITHUB_EVENT_PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_EVENT_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: .github/scripts/terraform-plan.sh
-
-      - name: Publish sanitized plan summary
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PLAN_STATUS: ${{ steps.plan.outputs.status }}
-          PLAN_CREATES: ${{ steps.plan.outputs.creates }}
-          PLAN_UPDATES: ${{ steps.plan.outputs.updates }}
-          PLAN_DELETES: ${{ steps.plan.outputs.deletes }}
-          PLAN_REPLACEMENTS: ${{ steps.plan.outputs.replacements }}
-          PLAN_DIGEST: ${{ steps.plan.outputs.bundle_sha256 }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          body="$(printf '%s\n' \
-            '### Terraform cluster plan' \
-            '' \
-            "- Status: ${PLAN_STATUS}" \
-            "- Creates: ${PLAN_CREATES}" \
-            "- Updates: ${PLAN_UPDATES}" \
-            "- Deletes: ${PLAN_DELETES}" \
-            "- Replacements: ${PLAN_REPLACEMENTS}" \
-            "- Private plan digest: \`${PLAN_DIGEST}\`" \
-            '' \
-            'The complete plan is encrypted in the private plan bucket.')"
-          gh pr comment "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+    with:
+      stack: cluster
+      state_key: ${{ vars.TF_CLUSTER_STATE_KEY }}
+    secrets:
+      TFVARS_CONTENT: ${{ secrets.TF_CLUSTER_VARS }}
 
   apply:
-    name: Apply reviewed plan
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: apply
+    if: github.event_name == 'push' && vars.TF_CLUSTER_CI_ENABLED == 'true'
+    uses: ./.github/workflows/_reusable-terraform-apply.yml
     permissions:
       contents: read
       id-token: write
       pull-requests: read
-    steps:
-      - name: Check out merged source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
-      - name: Assume apply role
-        uses: aws-actions/configure-aws-credentials@acca2b1b2070338fb9fd1ca27ecee81d687e58e5 # v6.1.2
-        with:
-          role-to-assume: ${{ vars.TF_APPLY_ROLE_ARN }}
-          role-session-name: gha-cluster-apply
-          aws-region: ${{ env.AWS_REGION }}
-          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
-          mask-aws-account-id: true
-
-      - name: Apply exact reviewed plan
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/terraform-apply.sh
+    with:
+      stack: cluster
+      state_key: ${{ vars.TF_CLUSTER_STATE_KEY }}

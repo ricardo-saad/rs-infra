@@ -51,11 +51,9 @@ locals {
   # the StringEquals repository_id/repository_owner_id conditions below so
   # that trust is bound to the immutable repository, not its current name.
   plan_workflow_refs = [
-    for stack in local.deployable_stacks :
-    "${var.github_owner}/${var.github_repository_name}/.github/workflows/terraform-${stack}.yml@refs/pull/*/merge"
+    "${var.github_owner}/${var.github_repository_name}/.github/workflows/_reusable-terraform-plan.yml@refs/pull/*/merge",
   ]
   apply_workflow_refs = [
-    for stack in local.deployable_stacks :
-    "${var.github_owner}/${var.github_repository_name}/.github/workflows/terraform-${stack}.yml@refs/heads/main"
+    "${var.github_owner}/${var.github_repository_name}/.github/workflows/_reusable-terraform-apply.yml@refs/heads/main",
   ]
 }
