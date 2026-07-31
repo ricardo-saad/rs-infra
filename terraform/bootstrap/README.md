@@ -1,9 +1,9 @@
 # Bootstrap stack
 
 Independent Terraform stack that creates the versioned S3 state foundation,
-the GitHub Actions OIDC provider, and the `rs-infra-plan`/`rs-infra-apply` CI
+the GitHub Actions OIDC provider, the `rs-infra-plan`/`rs-infra-apply` CI
 roles consumed by the other four deployable stacks (`network`, `gateway`,
-`cluster`, `dns`).
+`cluster`, `dns`), and the dedicated gateway image-build role and profile.
 
 This stack is **operator-applied by design**, not through a GitHub Actions
 workflow: `.github/scripts/terraform-plan.sh` and `terraform-apply.sh` both
@@ -25,7 +25,7 @@ in [`iam.tf`](iam.tf)).
   bundle's exact key unless the request includes `If-None-Match`, so a bundle
   a reviewer already approved can never be silently replaced.
 - One GitHub Actions OIDC provider (`token.actions.githubusercontent.com`),
-  trusted by both CI roles.
+  trusted by the three CI roles.
 - `rs-infra-plan`: read-only provider access, `s3:GetObject` on the four exact
   state keys, take/release of the native lock objects, and write access to its
   own stack's plan-bucket prefix. Trusted only from
@@ -38,8 +38,16 @@ in [`iam.tf`](iam.tf)).
   `refs/heads/main` through the `apply` environment claim. Carries explicit
   `Deny` statements for `secretsmanager:GetSecretValue`,
   `secretsmanager:PutSecretValue`, and `ssm:PutParameter` (Terraform creates
-  secret containers only, never a value) and for modifying either CI role,
+  secret containers only, never a value) and for modifying any CI/build role,
   the OIDC provider, or the two backend buckets' governance controls.
+- `rs-infra-image-build`: bounded EC2 and AMI lifecycle permissions, with
+  `iam:PassRole` limited to the exact `rs-infra-image-builder` role and
+  explicit denial of secret-value writes and reads. Trusted only from
+  same-repository pull-request merge refs through
+  `.github/workflows/image-gateway.yml`.
+- `rs-infra-image-builder`: an EC2-assumable instance profile containing only
+  the SSM control/data-channel permissions required by Packer's temporary
+  builder. It has no gateway runtime secret or Parameter Store permissions.
 
 As stacks beyond `network`/`gateway` grow real resources, extend
 `apply_permissions` in [`iam.tf`](iam.tf) to match — this policy is scoped to
@@ -64,9 +72,10 @@ possible without ever committing a local backend:
    path, not a second stack.
 4. Verify with `terraform plan` showing no changes.
 5. Record `terraform output` into the repository variables and secrets listed
-   in the top-level [`README.md`](../../README.md#deployment-workflow-configuration):
+   in the top-level [`README.md`](../../README.md#cloud-workflow-configuration):
    `TF_STATE_BUCKET`, `TF_STATE_KMS_KEY_ID`, `TF_PLAN_BUCKET`,
-   `TF_PLAN_KMS_KEY_ID`, `TF_PLAN_ROLE_ARN`, `TF_APPLY_ROLE_ARN`, and the four
+   `TF_PLAN_KMS_KEY_ID`, `TF_PLAN_ROLE_ARN`, `TF_APPLY_ROLE_ARN`,
+   `IMAGE_BUILD_ROLE_ARN`, `IMAGE_BUILDER_INSTANCE_PROFILE`, and the four
    `TF_<STACK>_STATE_KEY` variables.
 
 Re-running this stack later (e.g. to add a new deployable stack's mutate
@@ -95,10 +104,15 @@ No modules.
 
 | Name | Type |
 | ---- | ---- |
+| [aws_iam_instance_profile.packer_builder](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_instance_profile) | resource |
 | [aws_iam_openid_connect_provider.github_actions](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_openid_connect_provider) | resource |
 | [aws_iam_role.apply](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
+| [aws_iam_role.image_build](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
+| [aws_iam_role.packer_builder](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role.plan](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role_policy.apply](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
+| [aws_iam_role_policy.image_build](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
+| [aws_iam_role_policy.packer_builder](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.plan](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_kms_alias.plan](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
 | [aws_kms_alias.state](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
@@ -122,6 +136,10 @@ No modules.
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.apply_assume_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.apply_permissions](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.image_build_assume_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.image_build_permissions](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.packer_builder_assume_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_iam_policy_document.packer_builder_permissions](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.plan_assume_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.plan_bucket](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.plan_permissions](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
@@ -157,7 +175,9 @@ No modules.
 | <a name="output_cluster_state_key"></a> [cluster\_state\_key](#output\_cluster\_state\_key) | Cluster stack state object key; set as the TF\_CLUSTER\_STATE\_KEY repository variable. |
 | <a name="output_dns_state_key"></a> [dns\_state\_key](#output\_dns\_state\_key) | DNS stack state object key; set as the TF\_DNS\_STATE\_KEY repository variable. |
 | <a name="output_gateway_state_key"></a> [gateway\_state\_key](#output\_gateway\_state\_key) | Gateway stack state object key; set as the TF\_GATEWAY\_STATE\_KEY repository variable. |
-| <a name="output_github_oidc_provider_arn"></a> [github\_oidc\_provider\_arn](#output\_github\_oidc\_provider\_arn) | GitHub Actions OIDC provider trusted by both CI roles. |
+| <a name="output_github_oidc_provider_arn"></a> [github\_oidc\_provider\_arn](#output\_github\_oidc\_provider\_arn) | GitHub Actions OIDC provider trusted by the plan, apply, and image-build CI roles. |
+| <a name="output_image_build_role_arn"></a> [image\_build\_role\_arn](#output\_image\_build\_role\_arn) | Gateway AMI build role; set as the IMAGE\_BUILD\_ROLE\_ARN repository variable. |
+| <a name="output_image_builder_instance_profile_name"></a> [image\_builder\_instance\_profile\_name](#output\_image\_builder\_instance\_profile\_name) | Build-only SSM instance profile; set as the IMAGE\_BUILDER\_INSTANCE\_PROFILE repository variable. |
 | <a name="output_network_state_key"></a> [network\_state\_key](#output\_network\_state\_key) | Network stack state object key; set as the TF\_NETWORK\_STATE\_KEY repository variable. |
 | <a name="output_plan_bucket_name"></a> [plan\_bucket\_name](#output\_plan\_bucket\_name) | Private reviewed-plan and apply-log bucket; set as the TF\_PLAN\_BUCKET repository variable. |
 | <a name="output_plan_kms_key_arn"></a> [plan\_kms\_key\_arn](#output\_plan\_kms\_key\_arn) | Reviewed-plan bucket KMS key ARN; set as the TF\_PLAN\_KMS\_KEY\_ID repository variable. |

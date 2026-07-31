@@ -15,7 +15,7 @@ set -eu
 : "${CURL_VERSION:?}"
 : "${CA_CERTIFICATES_VERSION:?}"
 : "${PYTHON3_VERSION:?}"
-: "${OPENSSH_SERVER_VERSION:?}"
+: "${SSM_AGENT_REVISION:?}"
 : "${BUILD_VERSION:?}"
 
 export DEBIAN_FRONTEND=noninteractive
@@ -29,8 +29,7 @@ apt-get install --no-install-recommends -y \
   "apache2-utils=$APACHE2_UTILS_VERSION" \
   "curl=$CURL_VERSION" \
   "ca-certificates=$CA_CERTIFICATES_VERSION" \
-  "python3=$PYTHON3_VERSION" \
-  "openssh-server=$OPENSSH_SERVER_VERSION"
+  "python3=$PYTHON3_VERSION"
 
 curl --fail --location --proto '=https' --tlsv1.2 \
   "$ADGUARDHOME_ARCHIVE_URL" \
@@ -69,16 +68,30 @@ printf '%s\n' "$BUILD_VERSION" >/etc/rs-gateway/image-build-version
 chmod 0755 /usr/lib/rs-gateway/*.py /usr/lib/rs-gateway/*.sh
 chmod 0644 /usr/lib/rs-gateway/schemas/*.json
 chmod 0600 /etc/rs-gateway/runtime.env
-chmod 0644 /etc/ssh/sshd_config.d/90-rs-gateway.conf
 
-install -d -m 0755 /run/sshd
-/usr/sbin/sshd -t
-systemctl enable ssh.service
+installed_ssm_revision="$(snap list amazon-ssm-agent | awk 'NR == 2 { print $3 }')"
+if [ "$installed_ssm_revision" != "$SSM_AGENT_REVISION" ]; then
+  echo "installed SSM Agent revision does not match the approved revision" >&2
+  exit 2
+fi
+snap start --enable amazon-ssm-agent
+snap refresh --hold=forever amazon-ssm-agent
 
 systemctl disable --now wg-quick@wg-users.service \
   wg-quick@wg-personal.service wg-quick@wg-nodes.service 2>/dev/null || true
 systemctl disable rs-gateway-bootstrap.service
 systemctl enable rs-gateway.target
+
+systemctl disable --now ssh.service 2>/dev/null || true
+apt-get purge -y openssh-server
+rm -rf /etc/ssh/sshd_config.d
+openssh_status="$(
+  dpkg-query -W -f='${db:Status-Status}' openssh-server 2>/dev/null || true
+)"
+if [ "$openssh_status" = "installed" ]; then
+  echo "OpenSSH server remained installed in the final image" >&2
+  exit 2
+fi
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*

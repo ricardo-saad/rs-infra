@@ -3,9 +3,9 @@
 Independent Terraform stack for the replaceable EC2 hybrid gateway and its
 AWS-local support resources.
 
-The stack provisions the ARM appliance, Elastic IP, three WireGuard UDP
-security-group rules, operator-scoped TCP/22, VPC route targets, two exact
-recovery-secret containers, KMS key, temporary bootstrap or steady-state
+The stack provisions the Ubuntu Server 26.04 LTS ARM64 `t4g.small` appliance,
+Elastic IP, three WireGuard UDP security-group rules, VPC route targets, two
+exact recovery-secret containers, KMS key, temporary bootstrap or steady-state
 runtime profile, public-key SSM path permissions, and bounded CloudWatch
 logging and alarms.
 
@@ -17,11 +17,8 @@ The effective interface contract is:
 | `wg-personal` | 51822 | `10.100.2.0/24` |
 | `wg-nodes` | 51823 | `10.100.3.0/24` |
 
-SSH requires an existing EC2 key-pair name and one to eight explicit operator
-IPv4 `/32`s. Wider ranges and `0.0.0.0/0` are rejected. Terraform records only
-the public EC2 key-pair name and never manages private key material. The
-gateway image mirrors the `/32` allowlist in nftables and enforces key-only
-hardened SSH.
+The gateway has no EC2 key pair or inbound TCP rule. SSM Session Manager is the
+only operating-system administration path.
 
 Terraform creates no secret version and no SSM parameter value. Start the first
 gateway with `gateway_profile_mode = "bootstrap"`; after value-free completion
@@ -76,7 +73,6 @@ No modules.
 | [aws_security_group.gateway](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/security_group) | resource |
 | [aws_vpc_security_group_egress_rule.all](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_egress_rule) | resource |
 | [aws_vpc_security_group_ingress_rule.private_routed_traffic](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_ingress_rule) | resource |
-| [aws_vpc_security_group_ingress_rule.ssh](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_ingress_rule) | resource |
 | [aws_vpc_security_group_ingress_rule.wireguard](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_ingress_rule) | resource |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.bootstrap](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
@@ -94,12 +90,11 @@ No modules.
 | <a name="input_cost_center"></a> [cost\_center](#input\_cost\_center) | CostCenter tag applied to supported AWS resources. | `string` | n/a | yes |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment tag applied to supported AWS resources. | `string` | `"production"` | no |
 | <a name="input_game_route_table_id"></a> [game\_route\_table\_id](#input\_game\_route\_table\_id) | Private game route table ID exported by the network stack. | `string` | n/a | yes |
-| <a name="input_gateway_ami_id"></a> [gateway\_ami\_id](#input\_gateway\_ami\_id) | Approved immutable ARM gateway AMI ID. | `string` | n/a | yes |
+| <a name="input_gateway_ami_id"></a> [gateway\_ami\_id](#input\_gateway\_ami\_id) | Approved immutable Ubuntu Server 26.04 LTS ARM64 gateway AMI ID. | `string` | n/a | yes |
 | <a name="input_gateway_build_version"></a> [gateway\_build\_version](#input\_gateway\_build\_version) | Approved gateway image build version consumed by boot validation. | `string` | n/a | yes |
-| <a name="input_gateway_instance_type"></a> [gateway\_instance\_type](#input\_gateway\_instance\_type) | ARM instance type for the gateway appliance. | `string` | `"t4g.micro"` | no |
+| <a name="input_gateway_instance_type"></a> [gateway\_instance\_type](#input\_gateway\_instance\_type) | Approved ARM instance type for the gateway appliance. | `string` | `"t4g.small"` | no |
 | <a name="input_gateway_interface_device"></a> [gateway\_interface\_device](#input\_gateway\_interface\_device) | Gateway WAN interface name consumed by the immutable image. | `string` | `"ens5"` | no |
 | <a name="input_gateway_profile_mode"></a> [gateway\_profile\_mode](#input\_gateway\_profile\_mode) | Attach the one-time bootstrap profile or the steady-state runtime profile. | `string` | `"runtime"` | no |
-| <a name="input_gateway_ssh_key_pair_name"></a> [gateway\_ssh\_key\_pair\_name](#input\_gateway\_ssh\_key\_pair\_name) | Existing EC2 key-pair name installed for operator-scoped SSH access; the private key is never managed by Terraform. | `string` | n/a | yes |
 | <a name="input_kms_deletion_window_days"></a> [kms\_deletion\_window\_days](#input\_kms\_deletion\_window\_days) | Deletion window for the gateway secrets KMS key. | `number` | `30` | no |
 | <a name="input_log_retention_days"></a> [log\_retention\_days](#input\_log\_retention\_days) | Bounded retention for gateway CloudWatch logs. | `number` | `30` | no |
 | <a name="input_metrics_namespace"></a> [metrics\_namespace](#input\_metrics\_namespace) | CloudWatch namespace used by the gateway image. | `string` | `"RSPlatform/Gateway"` | no |
@@ -111,7 +106,6 @@ No modules.
 | <a name="input_root_volume_size_gib"></a> [root\_volume\_size\_gib](#input\_root\_volume\_size\_gib) | Disposable encrypted root volume size in GiB. | `number` | n/a | yes |
 | <a name="input_root_volume_type"></a> [root\_volume\_type](#input\_root\_volume\_type) | Disposable encrypted root volume type. | `string` | `"gp3"` | no |
 | <a name="input_secret_recovery_window_days"></a> [secret\_recovery\_window\_days](#input\_secret\_recovery\_window\_days) | Recovery window for the two gateway secret containers. | `number` | `30` | no |
-| <a name="input_ssh_ingress_ipv4_cidrs"></a> [ssh\_ingress\_ipv4\_cidrs](#input\_ssh\_ingress\_ipv4\_cidrs) | One to eight explicit operator IPv4 /32s allowed to reach gateway TCP/22; wider or world-open SSH is forbidden. | `set(string)` | n/a | yes |
 | <a name="input_ssm_public_key_prefix"></a> [ssm\_public\_key\_prefix](#input\_ssm\_public\_key\_prefix) | Pre-agreed Parameter Store prefix used only to publish gateway WireGuard public keys. | `string` | n/a | yes |
 | <a name="input_vpc_id"></a> [vpc\_id](#input\_vpc\_id) | Gateway VPC ID exported by the network stack. | `string` | n/a | yes |
 | <a name="input_wireguard_ingress_ipv4_cidrs"></a> [wireguard\_ingress\_ipv4\_cidrs](#input\_wireguard\_ingress\_ipv4\_cidrs) | IPv4 source CIDRs allowed to reach the public WireGuard UDP ports. | `set(string)` | <pre>[<br/>  "0.0.0.0/0"<br/>]</pre> | no |
@@ -126,7 +120,7 @@ No modules.
 | <a name="output_gateway_instance_id"></a> [gateway\_instance\_id](#output\_gateway\_instance\_id) | Current gateway EC2 instance ID. |
 | <a name="output_gateway_primary_network_interface_id"></a> [gateway\_primary\_network\_interface\_id](#output\_gateway\_primary\_network\_interface\_id) | Primary ENI used as the VPC routing target during replacement. |
 | <a name="output_gateway_secrets_kms_key_arn"></a> [gateway\_secrets\_kms\_key\_arn](#output\_gateway\_secrets\_kms\_key\_arn) | KMS key protecting the gateway recovery secret containers. |
-| <a name="output_gateway_security_group_id"></a> [gateway\_security\_group\_id](#output\_gateway\_security\_group\_id) | Gateway security group admitting three public WireGuard UDP ports, operator-scoped TCP/22, and private routed traffic. |
+| <a name="output_gateway_security_group_id"></a> [gateway\_security\_group\_id](#output\_gateway\_security\_group\_id) | Gateway security group admitting three public WireGuard UDP ports and private routed traffic with no inbound TCP. |
 | <a name="output_public_key_parameter_paths"></a> [public\_key\_parameter\_paths](#output\_public\_key\_parameter\_paths) | Exact SSM paths the gateway may overwrite with derived public keys; Terraform creates no parameter values. |
 | <a name="output_runtime_instance_profile_name"></a> [runtime\_instance\_profile\_name](#output\_runtime\_instance\_profile\_name) | Steady-state read-only gateway instance profile. |
 | <a name="output_wireguard_interfaces"></a> [wireguard\_interfaces](#output\_wireguard\_interfaces) | Effective three-interface WireGuard network contract. |

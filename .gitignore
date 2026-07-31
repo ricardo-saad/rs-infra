@@ -23,6 +23,7 @@ override.tf.json
 # Packer and image-build output.
 **/.packer.d/
 packer_cache/
+packer-manifest.json
 output-*/
 *.raw
 *.img

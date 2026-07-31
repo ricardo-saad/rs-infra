@@ -3,7 +3,6 @@ resource "aws_instance" "gateway" {
   instance_type               = var.gateway_instance_type
   subnet_id                   = var.public_subnet_id
   vpc_security_group_ids      = [aws_security_group.gateway.id]
-  key_name                    = var.gateway_ssh_key_pair_name
   associate_public_ip_address = false
   source_dest_check           = false
   monitoring                  = true
@@ -33,7 +32,6 @@ resource "aws_instance" "gateway" {
     public_key_parameter_prefix_b64 = base64encode(trimsuffix(var.ssm_public_key_prefix, "/"))
     metrics_namespace_b64           = base64encode(var.metrics_namespace)
     wan_interface_b64               = base64encode(var.gateway_interface_device)
-    ssh_ingress_ipv4_cidrs_b64      = base64encode(join(",", sort(tolist(var.ssh_ingress_ipv4_cidrs))))
     build_version_b64               = base64encode(var.gateway_build_version)
     gateway_profile_mode_b64        = base64encode(var.gateway_profile_mode)
   })

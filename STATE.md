@@ -1,7 +1,7 @@
 # Implementation handoff
 
-Snapshot: 2026-07-28  
-Base: `main` at `2376ef2`
+Snapshot: 2026-07-31
+Base: `main` at `37fb557`
 
 This file records the current implementation boundary and the shortest safe
 path to resume work. It contains no deployed inventory or secret values.
@@ -24,6 +24,12 @@ path to resume work. It contains no deployed inventory or secret values.
   - Cloudflare provider `5.22.0` for `dns`.
 - Cloudflare authentication now uses `CLOUDFLARE_API_TOKEN` rather than a
   Terraform variable, so credentials are not captured in saved plans.
+- Added a path-filtered gateway image workflow. Trusted same-repository pull
+  requests build a real AMI and publish its manifest; forks remain
+  credential-free.
+- Added a dedicated OIDC image-build role and a separate SSM-only EC2 builder
+  profile. The build role may pass only that profile and cannot read or write
+  gateway secret values.
 
 The shared workflow implementations are:
 
@@ -53,34 +59,17 @@ The agent is inactive unless `/etc/rs-gateway/control-plane.env` exists.
 `images/gateway/rootfs/etc/rs-gateway/control-plane.env.example` is the current
 non-secret configuration contract.
 
-### Operator SSH
+### Gateway host access and appliance
 
-- Gateway TCP/22 is admitted only from one to eight explicit operator IPv4
-  `/32`s. Wider prefixes and `0.0.0.0/0` are rejected.
-- The same allowlist is enforced by both the EC2 security group and host
-  nftables.
-- Terraform requires an existing EC2 key-pair name and installs only its
-  public key through EC2. Terraform never manages the private key.
-- The image installs a pinned OpenSSH server and permits key-only access as
-  `ubuntu`. Root login, passwords, interactive authentication, agent/X11/TCP
-  forwarding, tunnelling, and user environment injection are disabled.
-
-Required gateway inputs:
-
-```hcl
-gateway_ssh_key_pair_name = "existing-operator-key-pair"
-ssh_ingress_ipv4_cidrs    = ["operator-public-ip/32"]
-```
-
-Required image build input:
-
-```sh
-export RS_GATEWAY_OPENSSH_SERVER_VERSION='<exact-apt-version>'
-```
-
-Changing the SSH `/32` changes instance user data. With
-`user_data_replace_on_change = true`, Terraform replaces the gateway so the
-host firewall and security group cannot diverge.
+- ADR-0034 selects official Canonical Ubuntu Server 26.04 LTS ARM64 and
+  `t4g.small` for the initial gateway.
+- Gateway TCP/22 is absent from the EC2 security group and host nftables.
+- The runtime instance has no EC2 key pair and the final AMI contains no
+  OpenSSH server.
+- SSM Session Manager is the sole operating-system administration path.
+- Packer tunnels its temporary SSH communicator through Session Manager,
+  verifies the approved SSM Agent snap revision, and purges OpenSSH before
+  snapshotting the final AMI.
 
 ## Deployment prerequisites
 
@@ -91,8 +80,10 @@ Before cloud workflows can succeed, configure:
 
 1. The versioned S3 state bucket, native state locking, state KMS key, private
    reviewed-plan bucket, and plan KMS key.
-2. Immutable-ID-bound GitHub OIDC trust and least-privilege plan/apply roles.
-3. Repository variables and per-stack tfvars secrets listed in `README.md`.
+2. Immutable-ID-bound GitHub OIDC trust and least-privilege plan, apply, and
+   image-build roles plus the build-only instance profile.
+3. Repository variables, image pins, and per-stack tfvars secrets listed in
+   `README.md`, including the applied network stack's public build subnet.
 4. A protected `apply` environment restricted to `main` with an operator
    reviewer and the DNS write token.
 5. The read-only, expiring `CLOUDFLARE_PLAN_API_TOKEN`.
@@ -105,6 +96,8 @@ Important first-merge behavior:
 - A PR that changes the shared plan/apply scripts triggers all four plan
   workflows and therefore requires all four stack tfvars and backend/OIDC
   configuration.
+- A trusted PR that changes `images/gateway/` triggers a billable AMI build and
+  requires the image role, builder profile, build subnet, and complete pin set.
 - If the GitHub prerequisites are intentionally not ready, merge only with
   the expectation that the cloud-plan/apply checks will fail or remain
   environment-gated. Nothing falls back to an unreviewed plan.
@@ -145,42 +138,32 @@ image.
 - Add network-namespace/end-to-end tests for IPv4 egress, dual-stack leak
   prevention, DNS, private-path denial, games-only authorization, revocation,
   gateway replacement, and tunnel-down behavior.
-- Build and boot-test the AMI. Packer was not installed in the local validation
-  environment.
-
-### Documentation conflict
-
-The accepted `rs-platform` gateway documentation currently describes
-SSM-only administration with no public inbound TCP. The requested
-operator-restricted TCP/22 implementation intentionally changes that
-contract. Amend the upstream ADR and gateway architecture before promoting
-this image.
+- Run the first CI AMI build and add the SSM-only boot/acceptance test required
+  before promotion.
 
 ## Validation completed
 
-- Terraform format and generated documentation checks pass.
-- Terraform validate and TFLint pass for `network`, `gateway`, `cluster`, and
-  `dns`.
-- Gateway Terraform tests pass: 2 passed, 0 failed.
+- Terraform formatting, generated bootstrap/gateway documentation, and
+  bootstrap/gateway TFLint pass for the current change.
 - Gateway Python contract tests pass: 34 passed.
-- Python compilation and shell syntax checks pass.
-- Trivy reports zero high/critical configuration findings.
-- Workflow YAML parses and all third-party Action references use full commit
-  SHAs.
+- Gateway shell syntax checks pass.
+- Packer formatting and syntax-only validation pass.
+- The gateway image workflow passes `actionlint`, and every referenced action
+  remains pinned to a full commit SHA.
+- Bootstrap/gateway Terraform validation and gateway tests still need a
+  successful provider registry initialization in the current environment.
 - `git diff --check` passes.
 
-Packer validation, an AMI build, boot testing, cloud plans, and cloud applies
-were not run.
+An AMI build, boot testing, cloud plans, and cloud applies were not run.
 
 ## Recommended resume order
 
-1. Amend the upstream SSH decision and settle the mTLS issuer plus signed
-   envelope contracts.
+1. Settle the mTLS issuer plus signed envelope contracts.
 2. Bootstrap the Terraform backend and GitHub OIDC roles.
 3. Configure GitHub variables, secrets, environment protection, and required
    checks.
-4. Select the exact OpenSSH package pin, build the gateway AMI, and run a boot
-   test.
+4. Select the exact Ubuntu source AMI, archive snapshot, package pins, and SSM
+   Agent revision; then build the gateway AMI and run an SSM-only boot test.
 5. Open a reviewed infrastructure PR, apply `network`, then `gateway`, then
    `dns`, and complete the gateway bootstrap-to-runtime role transition.
 6. Implement the console device enrollment state machine and browser setup
