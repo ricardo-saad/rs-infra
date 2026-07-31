@@ -13,9 +13,10 @@ The backend block is deliberately partial and must be configured at init time.
 
 ## Delivery
 
-Changes to this stack are planned by `.github/workflows/terraform-network.yml`
-on trusted pull requests. Merging the reviewed change applies that exact saved
-plan through the protected `apply` environment.
+`.github/workflows/terraform-network.yml` is the path-filtered caller. Trusted
+pull requests delegate planning to `_reusable-terraform-plan.yml`; merging the
+reviewed change delegates application of that exact saved plan to
+`_reusable-terraform-apply.yml` through the protected `apply` environment.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements

@@ -67,10 +67,11 @@ taken. `packer-manifest.json` records the source and resulting AMI identifiers.
 
 `.github/workflows/image-gateway.yml` performs a real Packer build when a
 trusted same-repository pull request changes this directory. Fork pull
-requests remain credential-free and receive only static validation. The
-workflow assumes the dedicated `rs-infra-image-build` OIDC role, derives a
-unique build version from the pull request and workflow run, uploads the
-manifest, and comments the resulting candidate AMI ID on the pull request.
+requests remain credential-free and receive only static validation. The thin
+caller delegates privileged work to `_reusable-image-gateway-build.yml`,
+whose exact path is bound in the `rs-infra-image-build` OIDC trust. It derives
+a unique build version, uploads the manifest, and comments the candidate AMI
+ID on the pull request.
 
 Configure the repository variables listed in the root README before enabling
 the workflow. The workflow creates a review candidate, not a promoted runtime

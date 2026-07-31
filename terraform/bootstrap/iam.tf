@@ -110,7 +110,7 @@ data "aws_iam_policy_document" "image_build_assume_role" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:job_workflow_ref"
       values = [
-        "${var.github_owner}/${var.github_repository_name}/.github/workflows/image-gateway.yml@refs/pull/*/merge",
+        "${var.github_owner}/${var.github_repository_name}/.github/workflows/_reusable-image-gateway-build.yml@refs/pull/*/merge",
       ]
     }
   }

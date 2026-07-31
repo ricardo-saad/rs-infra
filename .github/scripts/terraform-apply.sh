@@ -155,7 +155,7 @@ if [[ "$(find "${bundle_directory}" -mindepth 1 -maxdepth 1 -type f | wc -l | tr
   exit 1
 fi
 
-expected_workflow_ref="${GITHUB_REPOSITORY}/.github/workflows/terraform-${STACK}.yml@refs/pull/${pull_request_number}/merge"
+expected_workflow_ref="${GITHUB_REPOSITORY}/.github/workflows/_reusable-terraform-plan.yml@refs/pull/${pull_request_number}/merge"
 if ! jq -e \
   --arg stack "${STACK}" \
   --arg state_key "${STATE_KEY}" \
