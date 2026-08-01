@@ -1,8 +1,9 @@
 # Documentation-only values. Supply credentials through CLOUDFLARE_API_TOKEN.
-zone_id            = "replace-me"
+zone_id            = "00000000000000000000000000000000"
 gateway_elastic_ip = "192.0.2.1"
 wireguard_record_names = {
   wg-users    = "users-vpn.example.invalid"
   wg-personal = "personal-vpn.example.invalid"
   wg-nodes    = "nodes-vpn.example.invalid"
 }
+platform_api_tunnel_target = "00000000-0000-0000-0000-000000000000.cfargotunnel.com"

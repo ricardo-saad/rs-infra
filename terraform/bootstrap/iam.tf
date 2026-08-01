@@ -206,6 +206,42 @@ data "aws_iam_policy_document" "plan_permissions" {
   }
 
   statement {
+    sid = "ReadClusterBackupBucketConfiguration"
+    actions = [
+      "s3:GetBucket*",
+      "s3:GetEncryptionConfiguration",
+      "s3:GetLifecycleConfiguration",
+      "s3:ListBucket",
+    ]
+    resources = [local.cluster_console_backup_bucket_arn]
+  }
+
+  statement {
+    sid = "ReadRoute53Configuration"
+    actions = [
+      "route53:GetHostedZone",
+      "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource",
+    ]
+    resources = ["arn:${data.aws_partition.current.partition}:route53:::hostedzone/*"]
+  }
+
+  statement {
+    sid = "ListRoute53HostedZones"
+    actions = [
+      "route53:ListHostedZones",
+      "route53:ListHostedZonesByName",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ReadRoute53Changes"
+    actions   = ["route53:GetChange"]
+    resources = ["arn:${data.aws_partition.current.partition}:route53:::change/*"]
+  }
+
+  statement {
     sid       = "ReadExactStateObjects"
     actions   = ["s3:GetObject"]
     resources = values(local.state_object_arns)
@@ -580,6 +616,60 @@ data "aws_iam_policy_document" "apply_permissions" {
     # KMS key and alias IDs do not exist before creation, so resource-level
     # scoping is not possible for these lifecycle actions.
     resources = ["*"]
+  }
+
+  statement {
+    sid = "ClusterBackupBucketLifecycle"
+    actions = [
+      "s3:CreateBucket",
+      "s3:DeleteBucket",
+      "s3:DeleteBucketPolicy",
+      "s3:GetBucket*",
+      "s3:GetEncryptionConfiguration",
+      "s3:GetLifecycleConfiguration",
+      "s3:ListBucket",
+      "s3:PutBucketPolicy",
+      "s3:PutBucketPublicAccessBlock",
+      "s3:PutBucketTagging",
+      "s3:PutBucketVersioning",
+      "s3:PutBucketOwnershipControls",
+      "s3:PutEncryptionConfiguration",
+      "s3:PutLifecycleConfiguration",
+    ]
+    resources = [local.cluster_console_backup_bucket_arn]
+  }
+
+  statement {
+    sid = "ClusterPrivateDnsLifecycle"
+    actions = [
+      "route53:AssociateVPCWithHostedZone",
+      "route53:ChangeResourceRecordSets",
+      "route53:ChangeTagsForResource",
+      "route53:DeleteHostedZone",
+      "route53:DisassociateVPCFromHostedZone",
+      "route53:GetHostedZone",
+      "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource",
+    ]
+    resources = ["arn:${data.aws_partition.current.partition}:route53:::hostedzone/*"]
+  }
+
+  statement {
+    sid = "CreateAndListPrivateDns"
+    actions = [
+      "route53:CreateHostedZone",
+      "route53:ListHostedZones",
+      "route53:ListHostedZonesByName",
+    ]
+    # The hosted-zone ID does not exist before creation, while the list
+    # actions do not support resource scoping.
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ObservePrivateDnsChanges"
+    actions   = ["route53:GetChange"]
+    resources = ["arn:${data.aws_partition.current.partition}:route53:::change/*"]
   }
 
   statement {

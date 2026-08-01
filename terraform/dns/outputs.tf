@@ -19,3 +19,23 @@ output "wireguard_record_hostnames" {
     interface_name => record.hostname
   }
 }
+
+output "platform_api_public_dns" {
+  description = "Public Cloudflare Tunnel DNS contract for the platform API; no tunnel credential is managed by Terraform."
+  value = {
+    hostname      = cloudflare_dns_record.platform_api.hostname
+    record_type   = cloudflare_dns_record.platform_api.type
+    tunnel_target = var.platform_api_tunnel_target
+    proxied       = cloudflare_dns_record.platform_api.proxied
+  }
+}
+
+output "platform_api_tls_dns_contract" {
+  description = "Public hostname input for rs-cloud/cert-manager and Traefik certificate configuration."
+  value = {
+    hostname                      = var.platform_api_hostname
+    dns_names                     = [var.platform_api_hostname]
+    certificate_owner             = "rs-cloud/cert-manager"
+    terraform_manages_private_key = false
+  }
+}

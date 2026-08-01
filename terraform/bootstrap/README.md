@@ -26,12 +26,17 @@ in [`iam.tf`](iam.tf)).
   trusted by the three CI roles.
 - `rs-infra-plan`: dormant read-only provider access, `s3:GetObject` on the
   four exact state keys, take/release of native lock objects, and write access
-  to its own stack's plan-bucket prefix. Its former workflow was removed with
-  the rejected whole-file GitHub secret transport. Do not recreate it until a
-  replacement remote configuration authority is accepted.
+  to its own stack's plan-bucket prefix. It can also read the exact
+  ADR-0037 cluster backup-bucket configuration and private Route53 resources.
+  Its former workflow was removed with the rejected whole-file GitHub secret
+  transport. Do not recreate it until every replacement remote-configuration
+  delivery gate is implemented and passing.
 - `rs-infra-apply`: dormant corresponding mutating provider access for what
-  `network` and `gateway` actually provision today, full state read/write,
-  and reviewed-plan read plus apply-log write. Trusted only from
+  `network`, `gateway`, and the ADR-0037 `cluster` foundations provision,
+  full state read/write, and reviewed-plan read plus apply-log write. Its
+  cluster permissions are bounded to the deterministic backup bucket,
+  project-prefixed IAM resources, KMS lifecycle, and private Route53 lifecycle.
+  Trusted only from
   `refs/heads/main` through the `apply` environment claim. Carries explicit
   `Deny` statements for `secretsmanager:GetSecretValue`,
   `secretsmanager:PutSecretValue`, and `ssm:PutParameter` (Terraform creates
@@ -48,7 +53,7 @@ in [`iam.tf`](iam.tf)).
   the SSM control/data-channel permissions required by Packer's temporary
   builder. It has no gateway runtime secret or Parameter Store permissions.
 
-As stacks beyond `network`/`gateway` grow real resources, extend
+As the remaining stack scaffolds grow real resources, extend
 `apply_permissions` in [`iam.tf`](iam.tf) to match — this policy is scoped to
 what is provisioned today, not a forecast of the finished platform.
 

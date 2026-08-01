@@ -1,0 +1,7 @@
+# Documentation-only values. Do not commit deployed IDs, inventory, or secrets.
+vpc_id                              = "vpc-00000000000000000"
+platform_api_private_ipv4_addresses = ["10.0.1.20"]
+cluster_oidc_provider_arn           = "arn:aws:iam::123456789012:oidc-provider/oidc.example.invalid"
+cluster_oidc_issuer_url             = "https://oidc.example.invalid"
+owner                               = "example-owner"
+cost_center                         = "example-cost-center"

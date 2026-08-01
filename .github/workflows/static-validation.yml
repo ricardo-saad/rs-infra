@@ -129,7 +129,7 @@ jobs:
         shell: bash
         run: terraform fmt -check -diff -recursive terraform
 
-      - name: Validate each stack without a backend
+      - name: Validate and test each stack without a backend
         shell: bash
         run: |
           set -euo pipefail
@@ -138,6 +138,7 @@ jobs:
             found=true
             terraform -chdir="${stack}" init -backend=false -input=false
             terraform -chdir="${stack}" validate -no-color
+            terraform -chdir="${stack}" test -no-color
           done < <(find terraform -mindepth 1 -maxdepth 1 -type d \
             -exec sh -c 'test -n "$(find "$1" -maxdepth 1 -name "*.tf" -print -quit)"' sh {} \; \
             -print | sort)

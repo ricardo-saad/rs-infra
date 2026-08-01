@@ -17,8 +17,9 @@ locals {
   # excluded: it is operator-applied, per README.md and CLAUDE.md.
   deployable_stacks = ["network", "gateway", "cluster", "dns"]
 
-  state_bucket_arn = "arn:${data.aws_partition.current.partition}:s3:::${aws_s3_bucket.state.id}"
-  plan_bucket_arn  = "arn:${data.aws_partition.current.partition}:s3:::${aws_s3_bucket.plan.id}"
+  state_bucket_arn                  = "arn:${data.aws_partition.current.partition}:s3:::${aws_s3_bucket.state.id}"
+  plan_bucket_arn                   = "arn:${data.aws_partition.current.partition}:s3:::${aws_s3_bucket.plan.id}"
+  cluster_console_backup_bucket_arn = "arn:${data.aws_partition.current.partition}:s3:::${var.project}-${var.environment}-cluster-console-backups-${data.aws_caller_identity.current.account_id}"
 
   # Native S3 state locking (`use_lockfile = true`) takes its lock via a
   # conditional write to "<key>.tflock" in the same bucket; no DynamoDB table
