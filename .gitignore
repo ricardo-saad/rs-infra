@@ -19,6 +19,7 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+terraform/bootstrap/terraform.tfvars
 
 # Packer and image-build output.
 **/.packer.d/
