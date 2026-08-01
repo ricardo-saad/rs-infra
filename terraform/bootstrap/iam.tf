@@ -103,14 +103,14 @@ data "aws_iam_policy_document" "image_build_assume_role" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:repository_id"
-      values   = [var.github_repository_id]
+      values   = [var.gateway_github_repository_id]
     }
 
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:job_workflow_ref"
       values = [
-        "${var.github_owner}/${var.github_repository_name}/.github/workflows/_reusable-image-gateway-build.yml@refs/pull/*/merge",
+        "${var.github_owner}/${var.gateway_github_repository_name}/.github/workflows/_reusable-image-build.yml@refs/pull/*/merge",
       ]
     }
   }
@@ -150,7 +150,7 @@ resource "aws_iam_role" "apply" {
 
 resource "aws_iam_role" "image_build" {
   name               = "rs-infra-image-build"
-  description        = "Gateway AMI build role, assumable only by trusted same-repository image pull requests."
+  description        = "Gateway AMI build role, assumable only by trusted private rs-gateway pull requests."
   assume_role_policy = data.aws_iam_policy_document.image_build_assume_role.json
 
   tags = {

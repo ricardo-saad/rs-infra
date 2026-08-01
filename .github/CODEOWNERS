@@ -11,7 +11,7 @@
 
 # Privileged infrastructure and automation boundaries.
 /terraform/           @ricardo-saad
-/images/              @ricardo-saad
+/images/home/         @ricardo-saad
 /provisioner/         @ricardo-saad
 /tools/               @ricardo-saad
 /argocd/              @ricardo-saad

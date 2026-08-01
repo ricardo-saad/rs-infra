@@ -19,7 +19,8 @@ their complete lifecycle: design, review, deployment, recovery, and removal.
 - AWS IAM, KMS, secret containers, and workload-secret access paths.
 - The private Talos cluster envelope, AWS-local node provisioner, and
   service-account federation.
-- Signed machine images for the EC2 gateway and Ubuntu Core home nodes.
+- Shared IAM and network infrastructure used by independently released machine
+  images, plus the future Ubuntu Core home-node image.
 - Operator tools for the one-time Talos recovery seed and workload-secret
   rotation.
 - The one-time Argo CD bootstrap.
@@ -34,6 +35,9 @@ path; it does not end when a resource is first created.
 ## Not owned here
 
 - Kubernetes workload manifests: `rs-cloud`.
+- Gateway appliance source, Packer build, runtime implementation, contract
+  tests, production image inputs, and AMI release workflow: private
+  `rs-gateway`.
 - Application source or application deployment policy: the relevant
   application repository.
 - Edge desired state: `rs-edge`.
@@ -110,4 +114,3 @@ Ownership changes require a pull request that updates this document and
 `CODEOWNERS` together. If a change alters a cross-repository boundary, the
 corresponding architecture decision in `rs-platform` must be updated first or
 in the same coordinated rollout.
-

@@ -14,12 +14,12 @@ output "apply_role_arn" {
 }
 
 output "image_build_role_arn" {
-  description = "Gateway AMI build role; set as the IMAGE_BUILD_ROLE_ARN repository variable."
+  description = "Gateway AMI build role; configure as IMAGE_BUILD_ROLE_ARN in the private rs-gateway repository."
   value       = aws_iam_role.image_build.arn
 }
 
 output "image_builder_instance_profile_name" {
-  description = "Build-only SSM instance profile; set as the IMAGE_BUILDER_INSTANCE_PROFILE repository variable."
+  description = "Build-only SSM instance profile; configure as IMAGE_BUILDER_INSTANCE_PROFILE in private rs-gateway."
   value       = aws_iam_instance_profile.packer_builder.name
 }
 

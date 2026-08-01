@@ -50,6 +50,27 @@ variable "github_repository_owner_id" {
   }
 }
 
+variable "gateway_github_repository_name" {
+  description = "Private gateway repository name used to bind the image-build workflow identity."
+  type        = string
+  default     = "rs-gateway"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._-]{1,100}$", var.gateway_github_repository_name))
+    error_message = "gateway_github_repository_name must be a valid GitHub repository name."
+  }
+}
+
+variable "gateway_github_repository_id" {
+  description = "Immutable numeric ID of the private gateway repository trusted to build AMIs."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*$", var.gateway_github_repository_id))
+    error_message = "gateway_github_repository_id must be the repository's immutable numeric ID."
+  }
+}
+
 variable "state_object_keys" {
   description = "Exact state object key for each deployable stack, keyed by stack name. These become the TF_<STACK>_STATE_KEY repository variables."
   type        = map(string)

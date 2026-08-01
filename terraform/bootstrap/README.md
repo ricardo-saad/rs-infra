@@ -5,12 +5,10 @@ the GitHub Actions OIDC provider, the `rs-infra-plan`/`rs-infra-apply` CI
 roles consumed by the other four deployable stacks (`network`, `gateway`,
 `cluster`, `dns`), and the dedicated gateway image-build role and profile.
 
-This stack is **operator-applied by design**, not through a GitHub Actions
-workflow: `.github/scripts/terraform-plan.sh` and `terraform-apply.sh` both
-hard-code `case "${STACK}" in network|gateway|cluster|dns)`, so `bootstrap`
-never gets a `terraform-bootstrap.yml` workflow. There is nowhere else for its
-own state to live before it exists, and the roles it creates must not be able
-to modify the identity and governance controls that constrain them (see
+This stack is **operator-applied by design**, not through GitHub Actions. There
+is nowhere else for its own state to live before it exists, and the roles it
+creates must not be able to modify the identity and governance controls that
+constrain them (see
 `DenySelfEscalation`, `DenyOidcProviderTamper`, and `DenyBackendGovernanceTamper`
 in [`iam.tf`](iam.tf)).
 
@@ -26,25 +24,26 @@ in [`iam.tf`](iam.tf)).
   a reviewer already approved can never be silently replaced.
 - One GitHub Actions OIDC provider (`token.actions.githubusercontent.com`),
   trusted by the three CI roles.
-- `rs-infra-plan`: read-only provider access, `s3:GetObject` on the four exact
-  state keys, take/release of the native lock objects, and write access to its
-  own stack's plan-bucket prefix. Trusted only from `refs/pull/*/merge` through
-  `_reusable-terraform-plan.yml`, bound to the immutable
-  `repository_id`/`repository_owner_id` claims, not the repository's current
-  name.
-- `rs-infra-apply`: the corresponding mutating provider access for what
+- `rs-infra-plan`: dormant read-only provider access, `s3:GetObject` on the
+  four exact state keys, take/release of native lock objects, and write access
+  to its own stack's plan-bucket prefix. Its former workflow was removed with
+  the rejected whole-file GitHub secret transport. Do not recreate it until a
+  replacement remote configuration authority is accepted.
+- `rs-infra-apply`: dormant corresponding mutating provider access for what
   `network` and `gateway` actually provision today, full state read/write,
   and reviewed-plan read plus apply-log write. Trusted only from
   `refs/heads/main` through the `apply` environment claim. Carries explicit
   `Deny` statements for `secretsmanager:GetSecretValue`,
   `secretsmanager:PutSecretValue`, and `ssm:PutParameter` (Terraform creates
   secret containers only, never a value) and for modifying any CI/build role,
-  the OIDC provider, or the two backend buckets' governance controls.
+  the OIDC provider, or the two backend buckets' governance controls. Its
+  workflow is removed for the same reason as the plan workflow.
 - `rs-infra-image-build`: bounded EC2 and AMI lifecycle permissions, with
   `iam:PassRole` limited to the exact `rs-infra-image-builder` role and
   explicit denial of secret-value writes and reads. Trusted only from
-  same-repository pull-request merge refs through
-  `.github/workflows/_reusable-image-gateway-build.yml`.
+  pull-request merge refs in the private `rs-gateway` repository through its
+  exact `.github/workflows/_reusable-image-build.yml` path and immutable
+  repository ID.
 - `rs-infra-image-builder`: an EC2-assumable instance profile containing only
   the SSM control/data-channel permissions required by Packer's temporary
   builder. It has no gateway runtime secret or Parameter Store permissions.
@@ -62,21 +61,24 @@ possible without ever committing a local backend:
    `terraform/bootstrap/backend_override.tf` containing
    `terraform { backend "local" {} }`.
 2. `terraform init && terraform apply` with real `owner`, `cost_center`,
-   `github_owner`, `github_repository_id`, `github_repository_owner_id`, and
-   `state_object_keys` values (see `terraform.tfvars.example`). This produces
-   local state and every resource above.
+   `github_owner`, `github_repository_id`, `github_repository_owner_id`,
+   `gateway_github_repository_id`, and `state_object_keys` values (see
+   `terraform.tfvars.example`). This produces local state and every resource
+   above.
 3. Delete `backend_override.tf`, then run
    `terraform init -migrate-state -backend-config="bucket=<state_bucket_name output>" -backend-config="key=bootstrap/terraform.tfstate" -backend-config="region=eu-west-2" -backend-config="encrypt=true" -backend-config="kms_key_id=<state_kms_key_arn output>" -backend-config="use_lockfile=true"`
    to move state into the bucket this stack just created. `bootstrap`'s own
    state now lives in the bucket it manages; bucket versioning is its recovery
    path, not a second stack.
 4. Verify with `terraform plan` showing no changes.
-5. Record `terraform output` into the repository variables and secrets listed
-   in the top-level [`README.md`](../../README.md#cloud-workflow-configuration):
+5. Record the Terraform delivery outputs as the non-secret repository
+   variables listed in the top-level
+   [`README.md`](../../README.md#cloud-workflow-configuration):
    `TF_STATE_BUCKET`, `TF_STATE_KMS_KEY_ID`, `TF_PLAN_BUCKET`,
-   `TF_PLAN_KMS_KEY_ID`, `TF_PLAN_ROLE_ARN`, `TF_APPLY_ROLE_ARN`,
-   `IMAGE_BUILD_ROLE_ARN`, `IMAGE_BUILDER_INSTANCE_PROFILE`, and the four
-   `TF_<STACK>_STATE_KEY` variables.
+   `TF_PLAN_KMS_KEY_ID`, `TF_PLAN_ROLE_ARN`, `TF_APPLY_ROLE_ARN`, and the four
+   `TF_<STACK>_STATE_KEY` variables. Configure `IMAGE_BUILD_ROLE_ARN` and
+   `IMAGE_BUILDER_INSTANCE_PROFILE` only in private `rs-gateway`; never copy
+   gateway build configuration into GitHub Actions secrets.
 
 Re-running this stack later (e.g. to add a new deployable stack's mutate
 permissions) is an ordinary local `terraform plan`/`apply` against the
@@ -154,6 +156,8 @@ No modules.
 | <a name="input_aws_region"></a> [aws\_region](#input\_aws\_region) | AWS region for the state backend, plan bucket, and CI roles. | `string` | `"eu-west-2"` | no |
 | <a name="input_cost_center"></a> [cost\_center](#input\_cost\_center) | CostCenter tag applied to supported AWS resources. | `string` | n/a | yes |
 | <a name="input_environment"></a> [environment](#input\_environment) | Environment tag applied to supported AWS resources. | `string` | `"production"` | no |
+| <a name="input_gateway_github_repository_id"></a> [gateway\_github\_repository\_id](#input\_gateway\_github\_repository\_id) | Immutable numeric ID of the private gateway repository trusted to build AMIs. | `string` | n/a | yes |
+| <a name="input_gateway_github_repository_name"></a> [gateway\_github\_repository\_name](#input\_gateway\_github\_repository\_name) | Private gateway repository name used to bind the image-build workflow identity. | `string` | `"rs-gateway"` | no |
 | <a name="input_github_owner"></a> [github\_owner](#input\_github\_owner) | GitHub organization or user that owns this repository. | `string` | n/a | yes |
 | <a name="input_github_repository_id"></a> [github\_repository\_id](#input\_github\_repository\_id) | Immutable numeric GitHub repository ID, bound in the OIDC trust policy so a rename or transfer cannot silently change trust. | `string` | n/a | yes |
 | <a name="input_github_repository_name"></a> [github\_repository\_name](#input\_github\_repository\_name) | GitHub repository name, used only to build the job\_workflow\_ref path pattern. | `string` | `"rs-infra"` | no |
@@ -176,8 +180,8 @@ No modules.
 | <a name="output_dns_state_key"></a> [dns\_state\_key](#output\_dns\_state\_key) | DNS stack state object key; set as the TF\_DNS\_STATE\_KEY repository variable. |
 | <a name="output_gateway_state_key"></a> [gateway\_state\_key](#output\_gateway\_state\_key) | Gateway stack state object key; set as the TF\_GATEWAY\_STATE\_KEY repository variable. |
 | <a name="output_github_oidc_provider_arn"></a> [github\_oidc\_provider\_arn](#output\_github\_oidc\_provider\_arn) | GitHub Actions OIDC provider trusted by the plan, apply, and image-build CI roles. |
-| <a name="output_image_build_role_arn"></a> [image\_build\_role\_arn](#output\_image\_build\_role\_arn) | Gateway AMI build role; set as the IMAGE\_BUILD\_ROLE\_ARN repository variable. |
-| <a name="output_image_builder_instance_profile_name"></a> [image\_builder\_instance\_profile\_name](#output\_image\_builder\_instance\_profile\_name) | Build-only SSM instance profile; set as the IMAGE\_BUILDER\_INSTANCE\_PROFILE repository variable. |
+| <a name="output_image_build_role_arn"></a> [image\_build\_role\_arn](#output\_image\_build\_role\_arn) | Gateway AMI build role; configure as IMAGE\_BUILD\_ROLE\_ARN in the private rs-gateway repository. |
+| <a name="output_image_builder_instance_profile_name"></a> [image\_builder\_instance\_profile\_name](#output\_image\_builder\_instance\_profile\_name) | Build-only SSM instance profile; configure as IMAGE\_BUILDER\_INSTANCE\_PROFILE in private rs-gateway. |
 | <a name="output_network_state_key"></a> [network\_state\_key](#output\_network\_state\_key) | Network stack state object key; set as the TF\_NETWORK\_STATE\_KEY repository variable. |
 | <a name="output_plan_bucket_name"></a> [plan\_bucket\_name](#output\_plan\_bucket\_name) | Private reviewed-plan and apply-log bucket; set as the TF\_PLAN\_BUCKET repository variable. |
 | <a name="output_plan_kms_key_arn"></a> [plan\_kms\_key\_arn](#output\_plan\_kms\_key\_arn) | Reviewed-plan bucket KMS key ARN; set as the TF\_PLAN\_KMS\_KEY\_ID repository variable. |
